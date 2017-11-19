@@ -15507,6 +15507,33 @@ var _debois$elm_mdl$Material_Scheme$topWithScheme = F3(
 var _debois$elm_mdl$Material_Scheme$top = function (content) {
 	return A3(_debois$elm_mdl$Material_Scheme$topWithScheme, _debois$elm_mdl$Material_Color$Grey, _debois$elm_mdl$Material_Color$Grey, content);
 };
+var _debois$elm_mdl$Material_Typography$uppercase = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-uppercase');
+var _debois$elm_mdl$Material_Typography$lowercase = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-lowercase');
+var _debois$elm_mdl$Material_Typography$capitalize = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-capitalize');
+var _debois$elm_mdl$Material_Typography$justify = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-justify');
+var _debois$elm_mdl$Material_Typography$right = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-right');
+var _debois$elm_mdl$Material_Typography$left = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-left');
+var _debois$elm_mdl$Material_Typography$center = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-center');
+var _debois$elm_mdl$Material_Typography$tableStriped = _debois$elm_mdl$Material_Options$cs('mdl-typography--table-striped');
+var _debois$elm_mdl$Material_Typography$nowrap = _debois$elm_mdl$Material_Options$cs('mdl-typography--text-nowrap');
+var _debois$elm_mdl$Material_Typography$contrast = function (x) {
+	return A2(
+		_debois$elm_mdl$Material_Options$css,
+		'opacity',
+		_elm_lang$core$Basics$toString(x));
+};
+var _debois$elm_mdl$Material_Typography$menu = _debois$elm_mdl$Material_Options$cs('mdl-typography--menu-color-contrast');
+var _debois$elm_mdl$Material_Typography$button = _debois$elm_mdl$Material_Options$cs('mdl-typography--button-color-contrast');
+var _debois$elm_mdl$Material_Typography$caption = _debois$elm_mdl$Material_Options$cs('mdl-typography--caption-force-preferred-font-color-contrast');
+var _debois$elm_mdl$Material_Typography$body2 = _debois$elm_mdl$Material_Options$cs('mdl-typography--body-2-force-preferred-font-color-contrast');
+var _debois$elm_mdl$Material_Typography$body1 = _debois$elm_mdl$Material_Options$cs('mdl-typography--body-1-force-preferred-font-color-contrast');
+var _debois$elm_mdl$Material_Typography$subhead = _debois$elm_mdl$Material_Options$cs('mdl-typography--subhead-color-contrast');
+var _debois$elm_mdl$Material_Typography$title = _debois$elm_mdl$Material_Options$cs('mdl-typography--title-color-contrast');
+var _debois$elm_mdl$Material_Typography$headline = _debois$elm_mdl$Material_Options$cs('mdl-typography--headline-color-contrast');
+var _debois$elm_mdl$Material_Typography$display4 = _debois$elm_mdl$Material_Options$cs('mdl-typography--display-4-color-contrast');
+var _debois$elm_mdl$Material_Typography$display3 = _debois$elm_mdl$Material_Options$cs('mdl-typography--display-3-color-contrast');
+var _debois$elm_mdl$Material_Typography$display2 = _debois$elm_mdl$Material_Options$cs('mdl-typography--display-2-color-contrast');
+var _debois$elm_mdl$Material_Typography$display1 = _debois$elm_mdl$Material_Options$cs('mdl-typography--display-1-color-contrast');
 var _elm_lang$core$Random$onSelfMsg = F3(
 	function (_p1, _p0, seed) {
 		return _elm_lang$core$Task$succeed(seed);
@@ -15885,10 +15912,26 @@ var _elm_lang$core$Random$cmdMap = F2(
 			A2(_elm_lang$core$Random$map, func, _p79._0));
 	});
 _elm_lang$core$Native_Platform.effectManagers['Random'] = {pkg: 'elm-lang/core', init: _elm_lang$core$Random$init, onEffects: _elm_lang$core$Random$onEffects, onSelfMsg: _elm_lang$core$Random$onSelfMsg, tag: 'cmd', cmdMap: _elm_lang$core$Random$cmdMap};
-var _user$project$Main$dialogEmpty = A2(
-	_debois$elm_mdl$Material_Dialog$view,
-	{ctor: '[]'},
-	{ctor: '[]'});
+var _user$project$Main$peopleTab = function (model) {
+	return A2(
+		_elm_lang$html$Html$div,
+		{ctor: '[]'},
+		{
+			ctor: '::',
+			_0: _elm_lang$html$Html$text('People'),
+			_1: {ctor: '[]'}
+		});
+};
+var _user$project$Main$projectsTab = function (model) {
+	return A2(
+		_elm_lang$html$Html$div,
+		{ctor: '[]'},
+		{
+			ctor: '::',
+			_0: _elm_lang$html$Html$text('Projects'),
+			_1: {ctor: '[]'}
+		});
+};
 var _user$project$Main$cycleCard = function (cycle) {
 	return A2(
 		_debois$elm_mdl$Material_Card$view,
@@ -15933,53 +15976,170 @@ var _user$project$Main$cycleCards = function (cycles) {
 		{ctor: '[]'},
 		A2(_elm_lang$core$List$map, _user$project$Main$cycleCard, cycles));
 };
+var _user$project$Main$top = A2(
+	_elm_lang$html$Html$div,
+	{ctor: '[]'},
+	{
+		ctor: '::',
+		_0: A3(
+			_elm_lang$html$Html$node,
+			'link',
+			{
+				ctor: '::',
+				_0: _elm_lang$html$Html_Attributes$rel('stylesheet'),
+				_1: {
+					ctor: '::',
+					_0: _elm_lang$html$Html_Attributes$href('https://fonts.googleapis.com/css?family=Roboto:400,300,500|Roboto+Mono|Roboto+Condensed:400,700&subset=latin,latin-ext'),
+					_1: {ctor: '[]'}
+				}
+			},
+			{ctor: '[]'}),
+		_1: {
+			ctor: '::',
+			_0: A3(
+				_elm_lang$html$Html$node,
+				'link',
+				{
+					ctor: '::',
+					_0: _elm_lang$html$Html_Attributes$rel('stylesheet'),
+					_1: {
+						ctor: '::',
+						_0: _elm_lang$html$Html_Attributes$href('https://fonts.googleapis.com/icon?family=Material+Icons'),
+						_1: {ctor: '[]'}
+					}
+				},
+				{ctor: '[]'}),
+			_1: {
+				ctor: '::',
+				_0: A3(
+					_elm_lang$html$Html$node,
+					'link',
+					{
+						ctor: '::',
+						_0: _elm_lang$html$Html_Attributes$rel('stylesheet'),
+						_1: {
+							ctor: '::',
+							_0: _elm_lang$html$Html_Attributes$href('https://code.getmdl.io/1.3.0/material.teal-pink.min.css'),
+							_1: {ctor: '[]'}
+						}
+					},
+					{ctor: '[]'}),
+				_1: {ctor: '[]'}
+			}
+		}
+	});
+var _user$project$Main$headerView = {
+	ctor: '::',
+	_0: A2(
+		_debois$elm_mdl$Material_Layout$row,
+		{ctor: '[]'},
+		{
+			ctor: '::',
+			_0: A2(
+				_debois$elm_mdl$Material_Layout$title,
+				{ctor: '[]'},
+				{
+					ctor: '::',
+					_0: _elm_lang$html$Html$text('Cycles'),
+					_1: {ctor: '[]'}
+				}),
+			_1: {
+				ctor: '::',
+				_0: _debois$elm_mdl$Material_Layout$spacer,
+				_1: {
+					ctor: '::',
+					_0: A2(
+						_debois$elm_mdl$Material_Layout$navigation,
+						{ctor: '[]'},
+						{
+							ctor: '::',
+							_0: A2(
+								_debois$elm_mdl$Material_Layout$link,
+								{
+									ctor: '::',
+									_0: _debois$elm_mdl$Material_Layout$href('https://github.com/rchampourlier/cycles'),
+									_1: {ctor: '[]'}
+								},
+								{
+									ctor: '::',
+									_0: A2(
+										_elm_lang$html$Html$span,
+										{ctor: '[]'},
+										{
+											ctor: '::',
+											_0: _elm_lang$html$Html$text('github'),
+											_1: {ctor: '[]'}
+										}),
+									_1: {ctor: '[]'}
+								}),
+							_1: {ctor: '[]'}
+						}),
+					_1: {ctor: '[]'}
+				}
+			}
+		}),
+	_1: {ctor: '[]'}
+};
+var _user$project$Main$e404 = function (_p0) {
+	return A2(
+		_elm_lang$html$Html$div,
+		{ctor: '[]'},
+		{
+			ctor: '::',
+			_0: A3(
+				_debois$elm_mdl$Material_Options$styled,
+				_elm_lang$html$Html$h1,
+				{
+					ctor: '::',
+					_0: _debois$elm_mdl$Material_Options$cs('mdl-typography--display-4'),
+					_1: {
+						ctor: '::',
+						_0: _debois$elm_mdl$Material_Typography$center,
+						_1: {ctor: '[]'}
+					}
+				},
+				{
+					ctor: '::',
+					_0: _elm_lang$html$Html$text('404'),
+					_1: {ctor: '[]'}
+				}),
+			_1: {ctor: '[]'}
+		});
+};
 var _user$project$Main$nextIndex = function (model) {
 	var cycles = model.cycles;
-	var _p0 = cycles;
-	if (_p0.ctor === '[]') {
+	var _p1 = cycles;
+	if (_p1.ctor === '[]') {
 		return 1;
 	} else {
-		return _p0._0.index + 1;
+		return _p1._0.index + 1;
 	}
-};
-var _user$project$Main$initialModel = {
-	cycles: {ctor: '[]'},
-	mdl: _debois$elm_mdl$Material$model,
-	ui: {dialogKind: _elm_lang$core$Maybe$Nothing}
 };
 var _user$project$Main$Cycle = function (a) {
 	return {index: a};
 };
-var _user$project$Main$UIModel = function (a) {
-	return {dialogKind: a};
-};
+var _user$project$Main$UIModel = F2(
+	function (a, b) {
+		return {dialogKind: a, selectedTab: b};
+	});
 var _user$project$Main$Model = F3(
 	function (a, b, c) {
 		return {cycles: a, mdl: b, ui: c};
 	});
-var _user$project$Main$DialogAddCycle = {ctor: 'DialogAddCycle'};
+var _user$project$Main$DialogNone = {ctor: 'DialogNone'};
+var _user$project$Main$initialModel = {
+	cycles: {ctor: '[]'},
+	mdl: _debois$elm_mdl$Material$model,
+	ui: {dialogKind: _user$project$Main$DialogNone, selectedTab: 0}
+};
 var _user$project$Main$Mdl = function (a) {
 	return {ctor: 'Mdl', _0: a};
 };
 var _user$project$Main$update = F2(
 	function (msg, model) {
-		var _p1 = msg;
-		switch (_p1.ctor) {
-			case 'AddCycle':
-				var ui_ = model.ui;
-				return {
-					ctor: '_Tuple2',
-					_0: _elm_lang$core$Native_Utils.update(
-						model,
-						{
-							ui: _elm_lang$core$Native_Utils.update(
-								ui_,
-								{
-									dialogKind: _elm_lang$core$Maybe$Just(_user$project$Main$DialogAddCycle)
-								})
-						}),
-					_1: _elm_lang$core$Platform_Cmd$none
-				};
+		var ui_ = model.ui;
+		var _p2 = msg;
+		switch (_p2.ctor) {
 			case 'CreateCycle':
 				var newCycle = {
 					index: _user$project$Main$nextIndex(model)
@@ -15992,12 +16152,23 @@ var _user$project$Main$update = F2(
 						{cycles: newCycles}),
 					_1: _elm_lang$core$Platform_Cmd$none
 				};
+			case 'UISelectTab':
+				return {
+					ctor: '_Tuple2',
+					_0: _elm_lang$core$Native_Utils.update(
+						model,
+						{
+							ui: _elm_lang$core$Native_Utils.update(
+								ui_,
+								{selectedTab: _p2._0})
+						}),
+					_1: _elm_lang$core$Platform_Cmd$none
+				};
 			default:
-				return A3(_debois$elm_mdl$Material$update, _user$project$Main$Mdl, _p1._0, model);
+				return A3(_debois$elm_mdl$Material$update, _user$project$Main$Mdl, _p2._0, model);
 		}
 	});
-var _user$project$Main$CreateCycle = {ctor: 'CreateCycle'};
-var _user$project$Main$dialogAddCycle = function (model) {
+var _user$project$Main$dialogEmpty = function (model) {
 	return A2(
 		_debois$elm_mdl$Material_Dialog$view,
 		{ctor: '[]'},
@@ -16008,7 +16179,7 @@ var _user$project$Main$dialogAddCycle = function (model) {
 				{ctor: '[]'},
 				{
 					ctor: '::',
-					_0: _elm_lang$html$Html$text('New Cycle'),
+					_0: _elm_lang$html$Html$text('Unexpected dialog'),
 					_1: {ctor: '[]'}
 				}),
 			_1: {
@@ -16016,25 +16187,7 @@ var _user$project$Main$dialogAddCycle = function (model) {
 				_0: A2(
 					_debois$elm_mdl$Material_Dialog$content,
 					{ctor: '[]'},
-					{
-						ctor: '::',
-						_0: A5(
-							_debois$elm_mdl$Material_Textfield$render,
-							_user$project$Main$Mdl,
-							{
-								ctor: '::',
-								_0: 1,
-								_1: {ctor: '[]'}
-							},
-							model.mdl,
-							{
-								ctor: '::',
-								_0: _debois$elm_mdl$Material_Textfield$label('Name'),
-								_1: {ctor: '[]'}
-							},
-							{ctor: '[]'}),
-						_1: {ctor: '[]'}
-					}),
+					{ctor: '[]'}),
 				_1: {
 					ctor: '::',
 					_0: A2(
@@ -16054,40 +16207,14 @@ var _user$project$Main$dialogAddCycle = function (model) {
 								{
 									ctor: '::',
 									_0: _debois$elm_mdl$Material_Dialog$closeOn('click'),
-									_1: {
-										ctor: '::',
-										_0: _debois$elm_mdl$Material_Options$onClick(_user$project$Main$CreateCycle),
-										_1: {ctor: '[]'}
-									}
+									_1: {ctor: '[]'}
 								},
 								{
 									ctor: '::',
-									_0: _elm_lang$html$Html$text('Create'),
+									_0: _elm_lang$html$Html$text('Cancel'),
 									_1: {ctor: '[]'}
 								}),
-							_1: {
-								ctor: '::',
-								_0: A5(
-									_debois$elm_mdl$Material_Button$render,
-									_user$project$Main$Mdl,
-									{
-										ctor: '::',
-										_0: 1,
-										_1: {ctor: '[]'}
-									},
-									model.mdl,
-									{
-										ctor: '::',
-										_0: _debois$elm_mdl$Material_Dialog$closeOn('click'),
-										_1: {ctor: '[]'}
-									},
-									{
-										ctor: '::',
-										_0: _elm_lang$html$Html$text('Cancel'),
-										_1: {ctor: '[]'}
-									}),
-								_1: {ctor: '[]'}
-							}
+							_1: {ctor: '[]'}
 						}),
 					_1: {ctor: '[]'}
 				}
@@ -16096,72 +16223,117 @@ var _user$project$Main$dialogAddCycle = function (model) {
 };
 var _user$project$Main$dialog = function (model) {
 	var dialogKind = model.ui.dialogKind;
-	var _p2 = dialogKind;
-	if (_p2.ctor === 'Nothing') {
-		return _user$project$Main$dialogEmpty;
-	} else {
-		return _user$project$Main$dialogAddCycle(model);
-	}
+	var _p3 = dialogKind;
+	return _user$project$Main$dialogEmpty(model);
 };
-var _user$project$Main$AddCycle = {ctor: 'AddCycle'};
-var _user$project$Main$view = function (model) {
+var _user$project$Main$UISelectTab = function (a) {
+	return {ctor: 'UISelectTab', _0: a};
+};
+var _user$project$Main$CreateCycle = {ctor: 'CreateCycle'};
+var _user$project$Main$cyclesTab = function (model) {
 	return A2(
 		_elm_lang$html$Html$div,
 		{ctor: '[]'},
 		{
 			ctor: '::',
-			_0: A3(
-				_elm_lang$html$Html$node,
-				'link',
+			_0: A5(
+				_debois$elm_mdl$Material_Button$render,
+				_user$project$Main$Mdl,
 				{
 					ctor: '::',
-					_0: _elm_lang$html$Html_Attributes$rel('stylesheet'),
+					_0: 0,
+					_1: {ctor: '[]'}
+				},
+				model.mdl,
+				{
+					ctor: '::',
+					_0: _debois$elm_mdl$Material_Button$raised,
 					_1: {
 						ctor: '::',
-						_0: _elm_lang$html$Html_Attributes$href('https://code.getmdl.io/1.3.0/material.teal-red.min.css'),
+						_0: _debois$elm_mdl$Material_Options$onClick(_user$project$Main$CreateCycle),
 						_1: {ctor: '[]'}
 					}
 				},
-				{ctor: '[]'}),
+				{
+					ctor: '::',
+					_0: _elm_lang$html$Html$text('Add cycle'),
+					_1: {ctor: '[]'}
+				}),
 			_1: {
 				ctor: '::',
-				_0: A5(
-					_debois$elm_mdl$Material_Button$render,
-					_user$project$Main$Mdl,
-					{
-						ctor: '::',
-						_0: 0,
-						_1: {ctor: '[]'}
-					},
-					model.mdl,
-					{
-						ctor: '::',
-						_0: _debois$elm_mdl$Material_Button$raised,
-						_1: {
-							ctor: '::',
-							_0: _debois$elm_mdl$Material_Options$onClick(_user$project$Main$AddCycle),
-							_1: {
-								ctor: '::',
-								_0: _debois$elm_mdl$Material_Dialog$openOn('click'),
-								_1: {ctor: '[]'}
-							}
-						}
-					},
-					{
-						ctor: '::',
-						_0: _elm_lang$html$Html$text('Add cycle'),
-						_1: {ctor: '[]'}
-					}),
+				_0: _user$project$Main$cycleCards(model.cycles),
 				_1: {
 					ctor: '::',
-					_0: _user$project$Main$cycleCards(model.cycles),
-					_1: {
-						ctor: '::',
-						_0: _user$project$Main$dialog(model),
-						_1: {ctor: '[]'}
-					}
+					_0: _user$project$Main$dialog(model),
+					_1: {ctor: '[]'}
 				}
 			}
+		});
+};
+var _user$project$Main$tabs = {
+	ctor: '::',
+	_0: {ctor: '_Tuple3', _0: 'Cycles', _1: 'cycles', _2: _user$project$Main$cyclesTab},
+	_1: {
+		ctor: '::',
+		_0: {ctor: '_Tuple3', _0: 'Projects', _1: 'projects', _2: _user$project$Main$projectsTab},
+		_1: {
+			ctor: '::',
+			_0: {ctor: '_Tuple3', _0: 'People', _1: 'people', _2: _user$project$Main$peopleTab},
+			_1: {ctor: '[]'}
+		}
+	}
+};
+var _user$project$Main$tabTitles = A2(
+	_elm_lang$core$List$map,
+	function (_p4) {
+		var _p5 = _p4;
+		return _elm_lang$html$Html$text(_p5._0);
+	},
+	_user$project$Main$tabs);
+var _user$project$Main$tabViews = _elm_lang$core$Array$fromList(
+	A2(
+		_elm_lang$core$List$map,
+		function (_p6) {
+			var _p7 = _p6;
+			return _p7._2;
+		},
+		_user$project$Main$tabs));
+var _user$project$Main$view = function (model) {
+	var selectedTab = A2(
+		_elm_lang$core$Maybe$withDefault,
+		_user$project$Main$e404,
+		A2(_elm_lang$core$Array$get, model.ui.selectedTab, _user$project$Main$tabViews))(model);
+	var main = {
+		ctor: '::',
+		_0: _user$project$Main$top,
+		_1: {
+			ctor: '::',
+			_0: selectedTab,
+			_1: {ctor: '[]'}
+		}
+	};
+	return A4(
+		_debois$elm_mdl$Material_Layout$render,
+		_user$project$Main$Mdl,
+		model.mdl,
+		{
+			ctor: '::',
+			_0: _debois$elm_mdl$Material_Layout$fixedHeader,
+			_1: {
+				ctor: '::',
+				_0: _debois$elm_mdl$Material_Layout$onSelectTab(_user$project$Main$UISelectTab),
+				_1: {ctor: '[]'}
+			}
+		},
+		{
+			header: _user$project$Main$headerView,
+			drawer: {ctor: '[]'},
+			tabs: {
+				ctor: '_Tuple2',
+				_0: _user$project$Main$tabTitles,
+				_1: {ctor: '[]'}
+			},
+			main: main
 		});
 };
 var _user$project$Main$main = _elm_lang$html$Html$program(
