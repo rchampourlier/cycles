@@ -19,24 +19,27 @@ import Time exposing (Time)
 import Material.Layout as Layout
 
 
---import Time.Date as Date exposing (Date, date)
 -- MODEL
 
 
 type alias Cycle =
     { index : Int
+    }
 
-    --, start : Date
-    --, end : Date
+
+type alias Project =
+    { name : String
     }
 
 
 type DialogKind
     = DialogNone
+    | DialogAddProject
 
 
 type alias UIModel =
     { dialogKind : DialogKind
+    , dialogFieldName : String
     , selectedTab : Int
     }
 
@@ -49,20 +52,47 @@ type alias UIModel =
 
 type alias Model =
     { cycles : List Cycle
+    , projects : List Project
     , mdl : Material.Model
     , ui : UIModel
+    }
+
+
+initialUIModel : UIModel
+initialUIModel =
+    { dialogKind = DialogNone
+    , dialogFieldName = ""
+    , selectedTab = 0
     }
 
 
 initialModel : Model
 initialModel =
     { cycles = []
+    , projects = []
     , mdl = Material.model
-    , ui =
-        { dialogKind = DialogNone
-        , selectedTab = 0
-        }
+    , ui = initialUIModel
     }
+
+
+
+-- An initial model to ease development
+
+
+initialModelForDev : Model
+initialModelForDev =
+    let
+        cycles =
+            [ { index = 2 }, { index = 1 } ]
+
+        projects =
+            [ { name = "Company Pages #1" }, { name = "Event Newsletter" } ]
+    in
+        { cycles = cycles
+        , projects = projects
+        , mdl = Material.model
+        , ui = initialUIModel
+        }
 
 
 nextIndex : Model -> Int
@@ -85,7 +115,11 @@ nextIndex model =
 
 type Msg
     = CreateCycle
+    | AddProject
+    | CreateProjectFromDialog
     | UISelectTab Int
+    | UIDialogUpdateFieldForProjectName String
+    | UIDialogReset
     | Mdl (Material.Msg Msg)
 
 
@@ -106,11 +140,57 @@ update msg model =
                 in
                     ( { model | cycles = newCycles }, Cmd.none )
 
+            AddProject ->
+                ( updateForDialog DialogAddProject model, Cmd.none )
+
+            CreateProjectFromDialog ->
+                let
+                    newProject =
+                        { name = model.ui.dialogFieldName }
+                in
+                    ( model
+                        |> addProject newProject
+                        |> resetDialog
+                    , Cmd.none
+                    )
+
             UISelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
 
+            UIDialogUpdateFieldForProjectName name ->
+                ( { model | ui = { ui_ | dialogFieldName = name } }, Cmd.none )
+
+            UIDialogReset ->
+                ( updateForDialog DialogNone model, Cmd.none )
+
             Mdl msg_ ->
                 Material.update Mdl msg_ model
+
+
+addProject : Project -> Model -> Model
+addProject project model =
+    { model | projects = (project :: model.projects) }
+
+
+resetDialog : Model -> Model
+resetDialog model =
+    let
+        ui_ =
+            model.ui
+    in
+        { model | ui = { ui_ | dialogFieldName = "" } }
+
+
+updateForDialog : DialogKind -> Model -> Model
+updateForDialog newKind model =
+    let
+        ui_ =
+            model.ui
+
+        newUI =
+            { ui_ | dialogKind = newKind }
+    in
+        { model | ui = newUI }
 
 
 
@@ -150,39 +230,63 @@ e404 _ =
 
 view : Model -> Html Msg
 view model =
+    Html.div [ A.id "app" ] [ top, layout model ]
+
+
+
+{- This is for prototyping in elm-reactor. For production,
+   should be moved to HTML/CSS assets.
+-}
+
+
+top : Html Msg
+top =
+    div []
+        [ Html.node "link"
+            [ A.rel "stylesheet"
+            , A.href "https://fonts.googleapis.com/css?family=Roboto:400,300,500|Roboto+Mono|Roboto+Condensed:400,700&subset=latin,latin-ext"
+            ]
+            []
+        , Html.node "link"
+            [ A.rel "stylesheet"
+            , A.href "https://fonts.googleapis.com/icon?family=Material+Icons"
+            ]
+            []
+        , Html.node "link"
+            [ A.rel "stylesheet"
+            , A.href "https://code.getmdl.io/1.3.0/material.teal-pink.min.css"
+            ]
+            []
+        , Html.node "style" [] [ text """
+        #app-cycles-tab-columns {
+          display: flex;
+        }
+        .cycle-column {
+          padding-right: 10px;
+        }
+        #elm-mdl-layout-main { // to enable clicking the elm-reactor's overlay
+          z-index: 0;
+        }
+        """ ]
+        ]
+
+
+layout : Model -> Html Msg
+layout model =
     let
         selectedTab =
             (Array.get model.ui.selectedTab tabViews |> Maybe.withDefault e404) model
     in
-        Html.div
-            [ A.id "app"
+        Layout.render Mdl
+            model.mdl
+            [ Layout.fixedHeader
+            , Layout.onSelectTab UISelectTab
             ]
-            [ Html.node "link"
-                [ A.rel "stylesheet"
-                , A.href "https://fonts.googleapis.com/css?family=Roboto:400,300,500|Roboto+Mono|Roboto+Condensed:400,700&subset=latin,latin-ext"
-                ]
-                []
-            , Html.node "link"
-                [ A.rel "stylesheet"
-                , A.href "https://fonts.googleapis.com/icon?family=Material+Icons"
-                ]
-                []
-            , Html.node "link"
-                [ A.rel "stylesheet"
-                , A.href "https://code.getmdl.io/1.3.0/material.teal-pink.min.css"
-                ]
-                []
-            , Layout.render Mdl
-                model.mdl
-                [ Layout.fixedHeader
-                , Layout.onSelectTab UISelectTab
-                ]
-                { header = headerView
-                , drawer = []
-                , tabs = ( tabTitles, [] )
-                , main = [ selectedTab ]
-                }
-            ]
+            { header = headerView
+            , drawer = []
+            , tabs = ( tabTitles, [] )
+            , main = [ selectedTab, dialog model ]
+            }
 
 
 headerView : List (Html Msg)
@@ -211,7 +315,6 @@ cyclesTab model =
             ]
             [ text "Add cycle" ]
         , cycleColumns model.cycles
-        , dialog model
         ]
 
 
@@ -244,7 +347,28 @@ cycleCard cycle =
 
 projectsTab : Model -> Html Msg
 projectsTab model =
-    div [] [ text "Projects" ]
+    div [ id "app-projects-tab" ]
+        [ Button.render Mdl
+            [ 0 ]
+            model.mdl
+            [ Button.raised
+            , Options.onClick AddProject
+            , Dialog.openOn "click"
+            ]
+            [ text "Add project" ]
+        , projectsTable model.projects
+        ]
+
+
+projectsTable : List Project -> Html Msg
+projectsTable projects =
+    div [ id "app-projects-tab-table" ]
+        (List.map projectRow projects)
+
+
+projectRow : Project -> Html Msg
+projectRow project =
+    div [] [ text project.name ]
 
 
 peopleTab : Model -> Html Msg
@@ -261,6 +385,9 @@ dialog model =
         case dialogKind of
             DialogNone ->
                 dialogEmpty model
+
+            DialogAddProject ->
+                dialogAddProject model
 
 
 dialogEmpty : Model -> Html Msg
@@ -279,13 +406,48 @@ dialogEmpty model =
         ]
 
 
+dialogAddProject : Model -> Html Msg
+dialogAddProject model =
+    Dialog.view
+        []
+        [ Dialog.title [] [ text "Add project" ]
+        , Dialog.content []
+            [ Textfield.render Mdl
+                [ 0 ]
+                model.mdl
+                [ Options.onInput UIDialogUpdateFieldForProjectName
+                , Textfield.label "Name"
+                , Textfield.floatingLabel
+                , Textfield.text_
+                ]
+                []
+            ]
+        , Dialog.actions []
+            [ Button.render Mdl
+                [ 0 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick CreateProjectFromDialog
+                ]
+                [ text "Create" ]
+            , Button.render Mdl
+                [ 1 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick UIDialogReset
+                ]
+                [ text "Cancel" ]
+            ]
+        ]
+
+
 
 -- MAIN
 
 
 main =
     Html.program
-        { init = ( initialModel, Cmd.none )
+        { init = ( initialModelForDev, Cmd.none )
         , view = view
         , update = update
         , subscriptions = Material.subscriptions Mdl
