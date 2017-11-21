@@ -9,6 +9,8 @@ import Material.Button as Button
 import Material.Card as Card
 import Material.Color as Color
 import Material.Dialog as Dialog
+import Material.Grid as Grid
+import Material.Icon as Icon
 import Material.Options as Options exposing (cs, css, div, id)
 import Material.Scheme
 import Material.Textfield as Textfield
@@ -258,14 +260,17 @@ top =
             ]
             []
         , Html.node "style" [] [ text """
-        #app-cycles-tab-columns {
+        #elm-mdl-layout-main {
+          z-index: 0; /* to enable clicking the elm-reactor's overlay */
+        }
+        .cycles {
           display: flex;
         }
-        .cycle-column {
+        .cycles--column {
           padding-right: 10px;
         }
-        #elm-mdl-layout-main { // to enable clicking the elm-reactor's overlay
-          z-index: 0;
+        .projects .mdl-card {
+          width: auto;
         }
         """ ]
         ]
@@ -306,7 +311,7 @@ headerView =
 
 cyclesTab : Model -> Html Msg
 cyclesTab model =
-    div [ id "app-cycles-tab" ]
+    div []
         [ Button.render Mdl
             [ 0 ]
             model.mdl
@@ -320,7 +325,7 @@ cyclesTab model =
 
 cycleColumns : List Cycle -> Html Msg
 cycleColumns cycles =
-    div [ id "app-cycles-tab-columns" ]
+    div [ cs "cycles" ]
         (cycles
             |> List.reverse
             |> List.map cycleColumn
@@ -330,15 +335,14 @@ cycleColumns cycles =
 cycleColumn : Cycle -> Html Msg
 cycleColumn cycle =
     Options.div
-        [ cs "cycle-column" ]
+        [ cs "cycles--column" ]
         [ cycleCard cycle ]
 
 
 cycleCard : Cycle -> Html Msg
 cycleCard cycle =
     Card.view
-        [ cs "cycle-card"
-        , css "width" "128px"
+        [ css "width" "128px"
         , Color.background (Color.color Color.Pink Color.S500)
         ]
         [ Card.title [] [ Card.head [ Color.text Color.white ] [ text <| toString cycle.index ] ]
@@ -347,7 +351,7 @@ cycleCard cycle =
 
 projectsTab : Model -> Html Msg
 projectsTab model =
-    div [ id "app-projects-tab" ]
+    div []
         [ Button.render Mdl
             [ 0 ]
             model.mdl
@@ -356,14 +360,46 @@ projectsTab model =
             , Dialog.openOn "click"
             ]
             [ text "Add project" ]
-        , projectsTable model.projects
+        , projectCards model
         ]
 
 
-projectsTable : List Project -> Html Msg
-projectsTable projects =
-    div [ id "app-projects-tab-table" ]
-        (List.map projectRow projects)
+projectCards : Model -> Html Msg
+projectCards model =
+    div [ cs "projects" ]
+        [ model.projects
+            |> List.map
+                (\project ->
+                    Grid.cell
+                        [ css "height" "200px", Grid.size Grid.All 4 ]
+                        [ projectCard project model ]
+                )
+            |> Grid.grid []
+        ]
+
+
+projectCard : Project -> Model -> Html Msg
+projectCard project model =
+    Card.view
+        [ Color.background (Color.color Color.DeepPurple Color.S300)
+        ]
+        [ Card.media
+            [ css "background" "url('assets/table.jpg') center / cover"
+            , css "height" "225px"
+            ]
+            []
+        , Card.title []
+            [ Card.head [ Color.text Color.white ] [ text project.name ]
+            , Card.subhead [ Color.text Color.white ] [ text "(No project details for now)" ]
+            ]
+        , Card.menu []
+            [ Button.render Mdl
+                [ 0 ]
+                model.mdl
+                [ Button.icon, Button.ripple, Color.text Color.white ]
+                [ Icon.i "delete" ]
+            ]
+        ]
 
 
 projectRow : Project -> Html Msg
