@@ -1,0 +1,19 @@
+#elm-mdl-layout-main {
+  z-index: 0; /* to enable clicking the elm-reactor's overlay */
+}
+
+.mdl-list__item {
+  overflow: visible; /* to enable select dropdowns in lists */
+}
+
+.cycles {
+  display: flex;
+}
+
+.cycles--column {
+  padding-right: 10px;
+}
+
+.projects .mdl-card {
+  width: auto;
+}
