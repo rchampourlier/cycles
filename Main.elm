@@ -2,7 +2,6 @@ module Main exposing (..)
 
 import Array exposing (Array)
 import Html exposing (Html, text)
-import Html.Events exposing (..)
 import Html.Attributes as A exposing (class, href)
 import Material
 import Material.Button as Button
@@ -11,13 +10,12 @@ import Material.Color as Color
 import Material.Dialog as Dialog
 import Material.Grid as Grid
 import Material.Icon as Icon
+import Material.List as List
+import Material.Dropdown.Item as Item
 import Material.Options as Options exposing (cs, css, div, id)
-import Material.Scheme
+import Material.Select as Select
 import Material.Textfield as Textfield
 import Material.Typography as Typography
-import Random
-import Task exposing (Task)
-import Time exposing (Time)
 import Material.Layout as Layout
 
 
@@ -32,6 +30,67 @@ type alias Cycle =
 type alias Project =
     { name : String
     }
+
+
+type alias Person =
+    { name : String
+    , role : Role
+    }
+
+
+type Role
+    = ProductManager
+    | BackendDeveloper
+    | FrontendDeveloper
+
+
+rolesValuesMap : List ( Role, String )
+rolesValuesMap =
+    [ ( ProductManager, "product_manager" )
+    , ( BackendDeveloper, "backend_developer" )
+    , ( FrontendDeveloper, "frontend_developer" )
+    ]
+
+
+roleForValue : String -> Maybe Role
+roleForValue value =
+    roleForValue_ value rolesValuesMap
+
+
+roleForValue_ : String -> List ( Role, String ) -> Maybe Role
+roleForValue_ value remainingMap =
+    case remainingMap of
+        [] ->
+            Nothing
+
+        h :: t ->
+            if Tuple.second h == value then
+                Just <| Tuple.first h
+            else
+                roleForValue_ value t
+
+
+valueForRole : Role -> String
+valueForRole role =
+    valueForRole_ role rolesValuesMap |> Maybe.withDefault ""
+
+
+valueForRole_ : Role -> List ( Role, String ) -> Maybe String
+valueForRole_ role remainingMap =
+    case remainingMap of
+        [] ->
+            Nothing
+
+        h :: t ->
+            if Tuple.first h == role then
+                Just <| Tuple.second h
+            else
+                valueForRole_ role t
+
+
+allRoleValues : List String
+allRoleValues =
+    List.map (\t -> Tuple.second t) rolesValuesMap
 
 
 type DialogKind
@@ -54,6 +113,7 @@ type alias UIModel =
 
 type alias Model =
     { cycles : List Cycle
+    , people : List Person
     , projects : List Project
     , mdl : Material.Model
     , ui : UIModel
@@ -71,6 +131,7 @@ initialUIModel =
 initialModel : Model
 initialModel =
     { cycles = []
+    , people = []
     , projects = []
     , mdl = Material.model
     , ui = initialUIModel
@@ -89,8 +150,12 @@ initialModelForDev =
 
         projects =
             [ { name = "Company Pages #1" }, { name = "Event Newsletter" } ]
+
+        people =
+            [ { name = "Raphaëlle", role = ProductManager } ]
     in
         { cycles = cycles
+        , people = people
         , projects = projects
         , mdl = Material.model
         , ui = initialUIModel
@@ -119,9 +184,12 @@ type Msg
     = CreateCycle
     | AddProject
     | CreateProjectFromDialog
+    | AddNewPerson
     | UISelectTab Int
     | UIDialogUpdateFieldForProjectName String
     | UIDialogReset
+    | UIUpdatePersonName String String -- 1st matches person's name, 2nd is update value
+    | UISelectPersonRole String String -- 1st matches person's name, 2nd is update value
     | Mdl (Material.Msg Msg)
 
 
@@ -156,6 +224,9 @@ update msg model =
                     , Cmd.none
                     )
 
+            AddNewPerson ->
+                ( addNewPerson model, Cmd.none )
+
             UISelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
 
@@ -165,6 +236,39 @@ update msg model =
             UIDialogReset ->
                 ( updateForDialog DialogNone model, Cmd.none )
 
+            UIUpdatePersonName personName newName ->
+                let
+                    updatedPeople =
+                        model.people
+                            |> List.map
+                                (\p ->
+                                    if p.name == personName then
+                                        { p | name = newName }
+                                    else
+                                        p
+                                )
+                in
+                    ( { model | people = updatedPeople }, Cmd.none )
+
+            UISelectPersonRole personName newRoleValue ->
+                case roleForValue newRoleValue of
+                    Nothing ->
+                        ( model, Cmd.none )
+
+                    Just role ->
+                        let
+                            updatedPeople =
+                                model.people
+                                    |> List.map
+                                        (\p ->
+                                            if p.name == personName then
+                                                { p | role = role }
+                                            else
+                                                p
+                                        )
+                        in
+                            ( { model | people = updatedPeople }, Cmd.none )
+
             Mdl msg_ ->
                 Material.update Mdl msg_ model
 
@@ -172,6 +276,15 @@ update msg model =
 addProject : Project -> Model -> Model
 addProject project model =
     { model | projects = (project :: model.projects) }
+
+
+addNewPerson : Model -> Model
+addNewPerson model =
+    let
+        newPerson =
+            { name = "New person", role = ProductManager }
+    in
+        { model | people = (newPerson :: model.people) }
 
 
 resetDialog : Model -> Model
@@ -232,48 +345,7 @@ e404 _ =
 
 view : Model -> Html Msg
 view model =
-    Html.div [ A.id "app" ] [ top, layout model ]
-
-
-
-{- This is for prototyping in elm-reactor. For production,
-   should be moved to HTML/CSS assets.
--}
-
-
-top : Html Msg
-top =
-    div []
-        [ Html.node "link"
-            [ A.rel "stylesheet"
-            , A.href "https://fonts.googleapis.com/css?family=Roboto:400,300,500|Roboto+Mono|Roboto+Condensed:400,700&subset=latin,latin-ext"
-            ]
-            []
-        , Html.node "link"
-            [ A.rel "stylesheet"
-            , A.href "https://fonts.googleapis.com/icon?family=Material+Icons"
-            ]
-            []
-        , Html.node "link"
-            [ A.rel "stylesheet"
-            , A.href "https://code.getmdl.io/1.3.0/material.teal-pink.min.css"
-            ]
-            []
-        , Html.node "style" [] [ text """
-        #elm-mdl-layout-main {
-          z-index: 0; /* to enable clicking the elm-reactor's overlay */
-        }
-        .cycles {
-          display: flex;
-        }
-        .cycles--column {
-          padding-right: 10px;
-        }
-        .projects .mdl-card {
-          width: auto;
-        }
-        """ ]
-        ]
+    Html.div [ A.id "app" ] [ layout model ]
 
 
 layout : Model -> Html Msg
@@ -353,63 +425,112 @@ projectsTab : Model -> Html Msg
 projectsTab model =
     div []
         [ Button.render Mdl
-            [ 0 ]
+            [ 1 ]
             model.mdl
             [ Button.raised
             , Options.onClick AddProject
             , Dialog.openOn "click"
             ]
             [ text "Add project" ]
-        , projectCards model
-        ]
-
-
-projectCards : Model -> Html Msg
-projectCards model =
-    div [ cs "projects" ]
-        [ model.projects
-            |> List.map
-                (\project ->
-                    Grid.cell
-                        [ css "height" "200px", Grid.size Grid.All 4 ]
-                        [ projectCard project model ]
-                )
-            |> Grid.grid []
-        ]
-
-
-projectCard : Project -> Model -> Html Msg
-projectCard project model =
-    Card.view
-        [ Color.background (Color.color Color.DeepPurple Color.S300)
-        ]
-        [ Card.media
-            [ css "background" "url('assets/table.jpg') center / cover"
-            , css "height" "225px"
-            ]
-            []
-        , Card.title []
-            [ Card.head [ Color.text Color.white ] [ text project.name ]
-            , Card.subhead [ Color.text Color.white ] [ text "(No project details for now)" ]
-            ]
-        , Card.menu []
-            [ Button.render Mdl
-                [ 0 ]
-                model.mdl
-                [ Button.icon, Button.ripple, Color.text Color.white ]
-                [ Icon.i "delete" ]
+        , div [ cs "projects" ]
+            [ model.projects
+                |> List.indexedMap (projectCard model)
+                |> Grid.grid []
             ]
         ]
 
 
-projectRow : Project -> Html Msg
-projectRow project =
-    div [] [ text project.name ]
+projectCard : Model -> Int -> Project -> Grid.Cell Msg
+projectCard model index project =
+    Grid.cell
+        [ css "height" "200px", Grid.size Grid.All 4 ]
+        [ Card.view
+            [ Color.background (Color.color Color.DeepPurple Color.S300)
+            ]
+            [ Card.media
+                [ css "background" "url('assets/table.jpg') center / cover"
+                , css "height" "225px"
+                ]
+                []
+            , Card.title []
+                [ Card.head [ Color.text Color.white ] [ text project.name ]
+                , Card.subhead [ Color.text Color.white ] [ text "(No project details for now)" ]
+                ]
+            , Card.menu []
+                [ Button.render Mdl
+                    [ 1, index ]
+                    model.mdl
+                    [ Button.icon, Button.ripple, Color.text Color.white ]
+                    [ Icon.i "delete" ]
+                ]
+            ]
+        ]
 
 
 peopleTab : Model -> Html Msg
 peopleTab model =
-    div [] [ text "People" ]
+    div []
+        [ addNewPersonButton model
+        , peopleTable model
+        ]
+
+
+addNewPersonButton : Model -> Html Msg
+addNewPersonButton model =
+    Button.render Mdl
+        [ 2 ]
+        model.mdl
+        [ Button.raised
+        , Options.onClick AddNewPerson
+        ]
+        [ text "Add person" ]
+
+
+peopleTable : Model -> Html Msg
+peopleTable model =
+    let
+        roleSelect index person =
+            Select.render Mdl
+                [ 4, index ]
+                model.mdl
+                [ Select.label "Role"
+                , Select.floatingLabel
+                , Select.ripple
+                , Select.value <| valueForRole person.role
+                ]
+                (allRoleValues
+                    |> List.map
+                        (\string ->
+                            Select.item
+                                [ Item.onSelect (UISelectPersonRole person.name string)
+                                ]
+                                [ text string
+                                ]
+                        )
+                )
+
+        nameTextfield index person =
+            Textfield.render Mdl
+                [ 3, index ]
+                model.mdl
+                [ Textfield.value <| person.name
+                , Options.onInput <| UIUpdatePersonName person.name
+                ]
+                []
+
+        personRow index person =
+            List.li []
+                [ List.content []
+                    [ List.avatarIcon "format_paint" []
+                    , nameTextfield index person
+                    , roleSelect index person
+                    ]
+                ]
+    in
+        List.ul [ cs "people" ]
+            (model.people
+                |> List.indexedMap personRow
+            )
 
 
 dialog : Model -> Html Msg
@@ -434,7 +555,7 @@ dialogEmpty model =
         , Dialog.content [] []
         , Dialog.actions []
             [ Button.render Mdl
-                [ 0 ]
+                [ 5 ]
                 model.mdl
                 [ Dialog.closeOn "click" ]
                 [ text "Cancel" ]
@@ -449,7 +570,7 @@ dialogAddProject model =
         [ Dialog.title [] [ text "Add project" ]
         , Dialog.content []
             [ Textfield.render Mdl
-                [ 0 ]
+                [ 6 ]
                 model.mdl
                 [ Options.onInput UIDialogUpdateFieldForProjectName
                 , Textfield.label "Name"
@@ -460,14 +581,14 @@ dialogAddProject model =
             ]
         , Dialog.actions []
             [ Button.render Mdl
-                [ 0 ]
+                [ 7 ]
                 model.mdl
                 [ Dialog.closeOn "click"
                 , Options.onClick CreateProjectFromDialog
                 ]
                 [ text "Create" ]
             , Button.render Mdl
-                [ 1 ]
+                [ 8 ]
                 model.mdl
                 [ Dialog.closeOn "click"
                 , Options.onClick UIDialogReset
