@@ -1,8 +1,10 @@
 module Main exposing (..)
 
 import Array exposing (Array)
+import Dict exposing (Dict)
 import Html exposing (Html, text)
 import Html.Attributes as A exposing (class, href)
+import List as L
 import Material
 import Material.Button as Button
 import Material.Card as Card
@@ -97,14 +99,8 @@ type alias UIModel =
     }
 
 
-
-{- cycles are sorted by index, descending, so that the greatest index
-   is first.
--}
-
-
 type alias Model =
-    { cycles : List Cycle
+    { cycles : List Cycle -- sorted by index, desc
     , people : List Person
     , projects : List Project
     , mdl : Material.Model
@@ -174,14 +170,19 @@ nextIndex model =
 
 type Msg
     = CreateCycle
+      -- projects
     | AddProject
     | CreateProjectFromDialog
+      -- people
     | AddNewPerson
+    | UpdatePersonName Int String -- personIndex, newValue
+    | LeavePersonNameEdition Int -- personIndex
+    | UpdatePersonRole Int String -- personIndex, newValue
+      -- ui
     | UISelectTab Int
     | UIDialogUpdateFieldForProjectName String
     | UIDialogReset
-    | UIUpdatePersonName String String -- 1st matches person's name, 2nd is update value
-    | UISelectPersonRole String String -- 1st matches person's name, 2nd is update value
+      -- mdl
     | Mdl (Material.Msg Msg)
 
 
@@ -228,41 +229,141 @@ update msg model =
             UIDialogReset ->
                 ( updateForDialog DialogNone model, Cmd.none )
 
-            UIUpdatePersonName personName newName ->
+            UpdatePersonName personIndex newName ->
+                ( model |> updatePersonName personIndex newName, Cmd.none )
+
+            LeavePersonNameEdition personIndex ->
                 let
-                    updatedPeople =
-                        model.people
-                            |> List.map
-                                (\p ->
-                                    if p.name == personName then
-                                        { p | name = newName }
-                                    else
-                                        p
-                                )
+                    newModel =
+                        model
+                            |> removeInvalidPersonAtIndex personIndex
+                            |> sortPeople
                 in
-                    ( { model | people = updatedPeople }, Cmd.none )
+                    ( newModel, Cmd.none )
 
-            UISelectPersonRole personName newRoleId ->
-                case roleForId newRoleId of
-                    Nothing ->
-                        ( model, Cmd.none )
-
-                    Just role ->
-                        let
-                            updatedPeople =
-                                model.people
-                                    |> List.map
-                                        (\p ->
-                                            if p.name == personName then
-                                                { p | roleId = role.id }
-                                            else
-                                                p
-                                        )
-                        in
-                            ( { model | people = updatedPeople }, Cmd.none )
+            UpdatePersonRole personIndex newRoleId ->
+                ( model |> updatePersonRole personIndex newRoleId, Cmd.none )
 
             Mdl msg_ ->
                 Material.update Mdl msg_ model
+
+
+updatePersonRole : Int -> String -> Model -> Model
+updatePersonRole personIndex newRoleId model =
+    case roleForId newRoleId of
+        Nothing ->
+            model
+
+        Just role ->
+            let
+                updatePerson index person =
+                    if index == personIndex then
+                        { person | roleId = role.id }
+                    else
+                        person
+            in
+                { model | people = model.people |> List.indexedMap updatePerson }
+
+
+updatePersonName : Int -> String -> Model -> Model
+updatePersonName personIndex newName model =
+    let
+        updatePerson index person =
+            if index == personIndex then
+                { person | name = newName }
+            else
+                person
+    in
+        { model | people = model.people |> List.indexedMap updatePerson }
+
+
+isPersonNameAlreadyTakenAtIndex : Int -> Model -> Bool
+isPersonNameAlreadyTakenAtIndex pIndex model =
+    case personAtIndex pIndex model of
+        Nothing ->
+            False
+
+        Just personAtIndex_ ->
+            (model.people
+                |> List.filter (\p -> p.name == personAtIndex_.name)
+                |> List.length
+            )
+                > 1
+
+
+isPersonNameEmptyAtIndex : Int -> Model -> Bool
+isPersonNameEmptyAtIndex pIndex model =
+    let
+        personAtIndex_ =
+            personAtIndex pIndex model
+    in
+        case personAtIndex_ of
+            Nothing ->
+                False
+
+            Just p ->
+                String.isEmpty p.name
+
+
+personAtIndex : Int -> Model -> Maybe Person
+personAtIndex pIndex model =
+    model.people
+        |> L.drop pIndex
+        |> L.head
+
+
+personNameAtIndex : Int -> Model -> Maybe String
+personNameAtIndex pIndex model =
+    case personAtIndex pIndex model of
+        Nothing ->
+            Nothing
+
+        Just person ->
+            Just person.name
+
+
+removeInvalidPersonAtIndex : Int -> Model -> Model
+removeInvalidPersonAtIndex pIndex model =
+    {- If the person at the specified index is invalid (duplicate or
+       empty name, removes it.
+    -}
+    let
+        personNameAtIndex_ =
+            personNameAtIndex pIndex model
+    in
+        if errorForPersonAtIndex pIndex model then
+            dropPersonAtIndex pIndex model
+        else
+            model
+
+
+dropPersonAtIndex : Int -> Model -> Model
+dropPersonAtIndex pIndex model =
+    let
+        people =
+            model.people
+    in
+        { model | people = (List.take pIndex people) ++ (List.drop (pIndex + 1) people) }
+
+
+errorForPersonAtIndex : Int -> Model -> Bool
+errorForPersonAtIndex pIndex model =
+    case errorMessageForPersonAtIndex pIndex model of
+        Nothing ->
+            False
+
+        Just m ->
+            True
+
+
+errorMessageForPersonAtIndex : Int -> Model -> Maybe String
+errorMessageForPersonAtIndex pIndex model =
+    if isPersonNameAlreadyTakenAtIndex pIndex model then
+        Just "Name already taken"
+    else if isPersonNameEmptyAtIndex pIndex model then
+        Just "Name cannot be empty"
+    else
+        Nothing
 
 
 addProject : Project -> Model -> Model
@@ -270,13 +371,21 @@ addProject project model =
     { model | projects = (project :: model.projects) }
 
 
+sortPeople : Model -> Model
+sortPeople model =
+    { model | people = model.people |> List.sortBy .name }
+
+
 addNewPerson : Model -> Model
 addNewPerson model =
     let
         newPerson =
             { name = "New person", roleId = "product_manager" }
+
+        newModel =
+            { model | people = (newPerson :: model.people) }
     in
-        { model | people = (newPerson :: model.people) }
+        newModel |> removeInvalidPersonAtIndex 0
 
 
 resetDialog : Model -> Model
@@ -480,9 +589,10 @@ addNewPersonButton model =
 peopleTable : Model -> Html Msg
 peopleTable model =
     let
-        roleSelect index person =
+        roleSelect : Int -> Person -> Html Msg
+        roleSelect pIndex person =
             Select.render Mdl
-                [ 4, index ]
+                [ 4, pIndex ]
                 model.mdl
                 [ Select.label "Role"
                 , Select.floatingLabel
@@ -493,28 +603,31 @@ peopleTable model =
                     |> List.map
                         (\roleId ->
                             Select.item
-                                [ Item.onSelect (UISelectPersonRole person.name roleId)
+                                [ Item.onSelect (UpdatePersonRole pIndex roleId)
                                 ]
                                 [ text <| roleReadForId roleId
                                 ]
                         )
                 )
 
-        nameTextfield index person =
+        nameTextfield pIndex person =
             Textfield.render Mdl
-                [ 3, index ]
+                [ 3, pIndex ]
                 model.mdl
                 [ Textfield.value <| person.name
-                , Options.onInput <| UIUpdatePersonName person.name
+                , Options.onInput <| UpdatePersonName pIndex
+                , Options.onBlur <| LeavePersonNameEdition pIndex
+                , Textfield.error (Maybe.withDefault "" (errorMessageForPersonAtIndex pIndex model))
+                    |> Options.when (errorForPersonAtIndex pIndex model && isTextfieldFocused [ 3, pIndex ] model)
                 ]
                 []
 
-        personRow index person =
+        personRow pIndex person =
             List.li []
                 [ List.content []
                     [ List.avatarIcon "format_paint" []
-                    , nameTextfield index person
-                    , roleSelect index person
+                    , nameTextfield pIndex person
+                    , roleSelect pIndex person
                     ]
                 ]
     in
@@ -589,10 +702,21 @@ dialogAddProject model =
         ]
 
 
+isTextfieldFocused : List Int -> Model -> Bool
+isTextfieldFocused key model =
+    case Dict.get key model.mdl.textfield of
+        Nothing ->
+            False
+
+        Just tf ->
+            tf.isFocused
+
+
 
 -- MAIN
 
 
+main : Program Never Model Msg
 main =
     Html.program
         { init = ( initialModelForDev, Cmd.none )
