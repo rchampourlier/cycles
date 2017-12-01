@@ -108,6 +108,15 @@ type alias Model =
     }
 
 
+
+{- MDL key references
+
+   - 3xx serie: people tab
+     310: person row delete button
+
+-}
+
+
 initialUIModel : UIModel
 initialUIModel =
     { dialogKind = DialogNone
@@ -178,6 +187,7 @@ type Msg
     | UpdatePersonName Int String -- personIndex, newValue
     | LeavePersonNameEdition Int -- personIndex
     | UpdatePersonRole Int String -- personIndex, newValue
+    | DeletePerson Int -- personIndex
       -- ui
     | UISelectTab Int
     | UIDialogUpdateFieldForProjectName String
@@ -203,6 +213,7 @@ update msg model =
                 in
                     ( { model | cycles = newCycles }, Cmd.none )
 
+            -- PROJECTS
             AddProject ->
                 ( updateForDialog DialogAddProject model, Cmd.none )
 
@@ -217,17 +228,12 @@ update msg model =
                     , Cmd.none
                     )
 
+            -- PEOPLE
             AddNewPerson ->
-                ( addNewPerson model, Cmd.none )
-
-            UISelectTab k ->
-                ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
-
-            UIDialogUpdateFieldForProjectName name ->
-                ( { model | ui = { ui_ | dialogFieldName = name } }, Cmd.none )
-
-            UIDialogReset ->
-                ( updateForDialog DialogNone model, Cmd.none )
+                ( model
+                    |> addNewPerson
+                , Cmd.none
+                )
 
             UpdatePersonName personIndex newName ->
                 ( model |> updatePersonName personIndex newName, Cmd.none )
@@ -243,6 +249,19 @@ update msg model =
 
             UpdatePersonRole personIndex newRoleId ->
                 ( model |> updatePersonRole personIndex newRoleId, Cmd.none )
+
+            DeletePerson pIndex ->
+                ( model |> removePersonAtIndex pIndex, Cmd.none )
+
+            -- UI
+            UISelectTab k ->
+                ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
+
+            UIDialogUpdateFieldForProjectName name ->
+                ( { model | ui = { ui_ | dialogFieldName = name } }, Cmd.none )
+
+            UIDialogReset ->
+                ( updateForDialog DialogNone model, Cmd.none )
 
             Mdl msg_ ->
                 Material.update Mdl msg_ model
@@ -332,13 +351,13 @@ removeInvalidPersonAtIndex pIndex model =
             personNameAtIndex pIndex model
     in
         if errorForPersonAtIndex pIndex model then
-            dropPersonAtIndex pIndex model
+            removePersonAtIndex pIndex model
         else
             model
 
 
-dropPersonAtIndex : Int -> Model -> Model
-dropPersonAtIndex pIndex model =
+removePersonAtIndex : Int -> Model -> Model
+removePersonAtIndex pIndex model =
     let
         people =
             model.people
@@ -622,6 +641,15 @@ peopleTable model =
                 ]
                 []
 
+        deleteButton model pIndex =
+            Button.render Mdl
+                [ 310, pIndex ]
+                model.mdl
+                [ Button.icon
+                , Options.onClick (DeletePerson pIndex)
+                ]
+                [ Icon.i "delete" ]
+
         personRow pIndex person =
             List.li []
                 [ List.content []
@@ -629,6 +657,7 @@ peopleTable model =
                     , nameTextfield pIndex person
                     , roleSelect pIndex person
                     ]
+                , deleteButton model pIndex
                 ]
     in
         List.ul [ cs "people" ]
