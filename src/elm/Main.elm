@@ -10,56 +10,100 @@ import Material.Button as Button
 import Material.Card as Card
 import Material.Color as Color
 import Material.Dialog as Dialog
+import Material.Elevation as Elevation
 import Material.Grid as Grid
 import Material.Icon as Icon
 import Material.List as List
 import Material.Dropdown.Item as Item
 import Material.Options as Options exposing (cs, css, div, id)
 import Material.Select as Select
+import Material.Table as Table
 import Material.Textfield as Textfield
+import Material.Toggles as Toggles
 import Material.Typography as Typography
 import Material.Layout as Layout
+import Set exposing (Set)
+
+
+toggle : comparable -> Set comparable -> Set comparable
+toggle x set =
+    if Set.member x set then
+        Set.remove x set
+    else
+        Set.insert x set
+
 
 
 -- MODEL
 
 
 type alias Cycle =
-    { index : Int
+    { index : CycleIndex
     }
 
 
+type CycleIndex
+    = CycleIndex Int
+
+
+cycleIndexToInt : CycleIndex -> Int
+cycleIndexToInt cycleIdx =
+    case cycleIdx of
+        CycleIndex i ->
+            i
+
+
 type alias Project =
-    { name : String
+    { name : ProjectName
+    }
+
+
+type ProjectName
+    = ProjectName String
+
+
+type RoleID
+    = RoleID String
+
+
+type alias Plan =
+    { cycleIndex : CycleIndex
+    , projectName : ProjectName
+    , assignments : List Assignment
     }
 
 
 type alias Person =
     { name : String
-    , roleId : String
+    , roleId : RoleID
     }
 
 
 type alias Role =
-    { id : String
+    { id : RoleID
     , read : String
+    }
+
+
+type alias Assignment =
+    { personName : String
     }
 
 
 roles : List Role
 roles =
-    [ { id = "product_manager", read = "Product Manager" }
-    , { id = "backend_developer", read = "Backend Developer" }
-    , { id = "frontend_developer", read = "Frontend Developer" }
+    [ { id = RoleID "product_manager", read = "Product Manager" }
+    , { id = RoleID "backend_developer", read = "Backend Developer" }
+    , { id = RoleID "frontend_developer", read = "Frontend Developer" }
     ]
 
 
-roleForId : String -> Maybe Role
+roleForId : RoleID -> Maybe Role
 roleForId id =
     roleForId_ id roles
 
 
-roleForId_ : String -> List Role -> Maybe Role
+roleForId_ : RoleID -> List Role -> Maybe Role
 roleForId_ id remainingMap =
     case remainingMap of
         [] ->
@@ -72,7 +116,11 @@ roleForId_ id remainingMap =
                 roleForId_ id t
 
 
-roleReadForId : String -> String
+
+-- TODO: use Result instead of Maybe
+
+
+roleReadForId : RoleID -> String
 roleReadForId id =
     case roleForId id of
         Nothing ->
@@ -82,7 +130,7 @@ roleReadForId id =
             role.read
 
 
-allRoleIds : List String
+allRoleIds : List RoleID
 allRoleIds =
     List.map .id roles
 
@@ -90,29 +138,39 @@ allRoleIds =
 type DialogKind
     = DialogNone
     | DialogAddProject
-
-
-type alias UIModel =
-    { dialogKind : DialogKind
-    , dialogFieldName : String
-    , selectedTab : Int
-    }
+    | DialogAddProjectsToCycle CycleIndex
 
 
 type alias Model =
     { cycles : List Cycle -- sorted by index, desc
     , people : List Person
+    , plans : List Plan
     , projects : List Project
     , mdl : Material.Model
     , ui : UIModel
     }
 
 
+type alias UIModel =
+    { dialogKind : DialogKind
+    , dialogFieldName : String
+    , dialogAddPlanSelected : Set String -- project names as String
+    , selectedTab : Int
+    }
+
+
 
 {- MDL key references
 
-   - 3xx serie: people tab
+   # 1xx serie: cycles tab
+     110: cycle column, plan project button
+
+   # 3xx serie: people tab
      310: person row delete button
+
+   # 9xx serie: dialog
+     901: cancel button
+     902: action button
 
 -}
 
@@ -121,6 +179,7 @@ initialUIModel : UIModel
 initialUIModel =
     { dialogKind = DialogNone
     , dialogFieldName = ""
+    , dialogAddPlanSelected = Set.empty
     , selectedTab = 0
     }
 
@@ -129,6 +188,7 @@ initialModel : Model
 initialModel =
     { cycles = []
     , people = []
+    , plans = []
     , projects = []
     , mdl = Material.model
     , ui = initialUIModel
@@ -137,29 +197,44 @@ initialModel =
 
 
 -- An initial model to ease development
+-- TODO: extract module for RoleID to enforce it using
+--   the single constructor union type
 
 
 initialModelForDev : Model
 initialModelForDev =
     let
         cycles =
-            [ { index = 2 }, { index = 1 } ]
-
-        projects =
-            [ { name = "Company Pages #1" }, { name = "Event Newsletter" } ]
+            [ { index = CycleIndex 2 }
+            , { index = CycleIndex 1 }
+            ]
 
         people =
-            [ { name = "Raphaëlle", roleId = "product_manager" } ]
+            [ { name = "Raphaëlle", roleId = RoleID "product_manager" }
+            , { name = "Christophe", roleId = RoleID "product_manager" }
+            , { name = "Ludovic", roleId = RoleID "backend_developer" }
+            ]
+
+        plans =
+            [ { cycleIndex = CycleIndex 1
+              , projectName = ProjectName "Company Pages #1"
+              , assignments = []
+              }
+            ]
+
+        projects =
+            [ { name = ProjectName "Company Pages #1" }, { name = ProjectName "Event Newsletter" } ]
     in
         { cycles = cycles
         , people = people
+        , plans = plans
         , projects = projects
         , mdl = Material.model
         , ui = initialUIModel
         }
 
 
-nextIndex : Model -> Int
+nextIndex : Model -> CycleIndex
 nextIndex model =
     let
         cycles =
@@ -167,10 +242,12 @@ nextIndex model =
     in
         case cycles of
             [] ->
-                1
+                CycleIndex 1
 
             c :: _ ->
-                c.index + 1
+                case c.index of
+                    CycleIndex i ->
+                        CycleIndex (i + 1)
 
 
 
@@ -184,13 +261,19 @@ type Msg
     | CreateProjectFromDialog
       -- people
     | AddNewPerson
-    | UpdatePersonName Int String -- personIndex, newValue
+    | UpdatePersonName Int String -- personIndex newValue
     | LeavePersonNameEdition Int -- personIndex
-    | UpdatePersonRole Int String -- personIndex, newValue
+    | UpdatePersonRole Int RoleID -- personIndex...
     | DeletePerson Int -- personIndex
+      -- plans
+    | AddPlan ProjectName CycleIndex -- projectName cycleIndex
+    | AddProjectsToCycle CycleIndex
+    | AddProjectsToCycleFromDialog CycleIndex
       -- ui
     | UISelectTab Int
-    | UIDialogUpdateFieldForProjectName String
+    | UIDialogAddProjectUpdateFieldName String
+    | UIDialogAddProjectsToCycleToggleAll
+    | UIDialogAddProjectsToCycleToggle String
     | UIDialogReset
       -- mdl
     | Mdl (Material.Msg Msg)
@@ -215,12 +298,12 @@ update msg model =
 
             -- PROJECTS
             AddProject ->
-                ( updateForDialog DialogAddProject model, Cmd.none )
+                ( updateUIDialogKind DialogAddProject model, Cmd.none )
 
             CreateProjectFromDialog ->
                 let
                     newProject =
-                        { name = model.ui.dialogFieldName }
+                        { name = ProjectName model.ui.dialogFieldName }
                 in
                     ( model
                         |> addProject newProject
@@ -253,21 +336,73 @@ update msg model =
             DeletePerson pIndex ->
                 ( model |> removePersonAtIndex pIndex, Cmd.none )
 
+            -- PLANS
+            AddPlan projectName cycleIndex ->
+                -- TODO
+                ( model, Cmd.none )
+
+            AddProjectsToCycle cycleIdx ->
+                ( model |> updateUIDialogKind (DialogAddProjectsToCycle cycleIdx), Cmd.none )
+
+            AddProjectsToCycleFromDialog cycleIdx ->
+                ( model
+                    |> addPlanFromDialog cycleIdx
+                    |> updateUIDialogReset
+                , Cmd.none
+                )
+
             -- UI
             UISelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
 
-            UIDialogUpdateFieldForProjectName name ->
+            UIDialogAddProjectUpdateFieldName name ->
                 ( { model | ui = { ui_ | dialogFieldName = name } }, Cmd.none )
 
+            UIDialogAddProjectsToCycleToggleAll ->
+                ( model |> updateUIDialogAddProjectsToCycleToggleAll, Cmd.none )
+
+            UIDialogAddProjectsToCycleToggle projectNameStr ->
+                ( model |> updateUIDialogAddProjectsToCycleToggle projectNameStr, Cmd.none )
+
             UIDialogReset ->
-                ( updateForDialog DialogNone model, Cmd.none )
+                ( model |> updateUIDialogReset, Cmd.none )
 
             Mdl msg_ ->
                 Material.update Mdl msg_ model
 
 
-updatePersonRole : Int -> String -> Model -> Model
+
+-- UPDATE/CYCLES
+
+
+cycleAtIndex : CycleIndex -> Model -> Maybe Cycle
+cycleAtIndex cycleIdx model =
+    model.cycles
+        |> List.filter (\c -> c.index == cycleIdx)
+        |> List.head
+
+
+updateCycleAtIndex : CycleIndex -> Cycle -> Model -> Model
+updateCycleAtIndex cycleIdx newCycle model =
+    let
+        newCycles =
+            model.cycles
+                |> List.map
+                    (\c ->
+                        if c.index == cycleIdx then
+                            newCycle
+                        else
+                            c
+                    )
+    in
+        { model | cycles = newCycles }
+
+
+
+-- UPDATE/PEOPLE
+
+
+updatePersonRole : Int -> RoleID -> Model -> Model
 updatePersonRole personIndex newRoleId model =
     case roleForId newRoleId of
         Nothing ->
@@ -385,11 +520,6 @@ errorMessageForPersonAtIndex pIndex model =
         Nothing
 
 
-addProject : Project -> Model -> Model
-addProject project model =
-    { model | projects = (project :: model.projects) }
-
-
 sortPeople : Model -> Model
 sortPeople model =
     { model | people = model.people |> List.sortBy .name }
@@ -399,12 +529,80 @@ addNewPerson : Model -> Model
 addNewPerson model =
     let
         newPerson =
-            { name = "New person", roleId = "product_manager" }
+            { name = "New person", roleId = RoleID "product_manager" }
 
         newModel =
             { model | people = (newPerson :: model.people) }
     in
         newModel |> removeInvalidPersonAtIndex 0
+
+
+
+-- UPDATE/PLANS
+
+
+plannedProjectNamesForCycle : CycleIndex -> Model -> List ProjectName
+plannedProjectNamesForCycle cycleIdx model =
+    model.plans
+        |> List.filter (\p -> p.cycleIndex == cycleIdx)
+        |> List.map .projectName
+
+
+
+-- UPDATE/PROJECTS
+
+
+addPlanFromDialog : CycleIndex -> Model -> Model
+addPlanFromDialog cycleIdx model =
+    let
+        cycle_ =
+            cycleAtIndex cycleIdx model
+
+        selectedProjects : List ProjectName
+        selectedProjects =
+            model.ui.dialogAddPlanSelected
+                |> Set.toList
+                |> List.map (\s -> ProjectName s)
+    in
+        case cycle_ of
+            Nothing ->
+                model
+
+            Just cycle ->
+                let
+                    newPlans =
+                        selectedProjects
+                            |> List.map (\pn -> { cycleIndex = cycleIdx, projectName = pn, assignments = [] })
+                in
+                    model |> addPlans newPlans
+
+
+addPlans : List Plan -> Model -> Model
+addPlans plans model =
+    { model | plans = model.plans ++ plans }
+
+
+addProject : Project -> Model -> Model
+addProject project model =
+    { model | projects = (project :: model.projects) }
+
+
+projectNameToString : ProjectName -> String
+projectNameToString projectNameStr =
+    case projectNameStr of
+        ProjectName s ->
+            s
+
+
+projectForName : Model -> ProjectName -> Maybe Project
+projectForName model projectName =
+    model.projects
+        |> List.filter (\p -> p.name == projectName)
+        |> List.head
+
+
+
+-- UPDATE/DIALOGS
 
 
 resetDialog : Model -> Model
@@ -416,8 +614,15 @@ resetDialog model =
         { model | ui = { ui_ | dialogFieldName = "" } }
 
 
-updateForDialog : DialogKind -> Model -> Model
-updateForDialog newKind model =
+updateUIDialogReset : Model -> Model
+updateUIDialogReset model =
+    model
+        |> updateUIDialogKind DialogNone
+        |> updateUIDialogAddProjectsToCycleToggleNone
+
+
+updateUIDialogKind : DialogKind -> Model -> Model
+updateUIDialogKind newKind model =
     let
         ui_ =
             model.ui
@@ -426,6 +631,60 @@ updateForDialog newKind model =
             { ui_ | dialogKind = newKind }
     in
         { model | ui = newUI }
+
+
+updateUIDialogAddProjectsToCycleToggleNone : Model -> Model
+updateUIDialogAddProjectsToCycleToggleNone model =
+    let
+        ui_ =
+            model.ui
+    in
+        { model | ui = { ui_ | dialogAddPlanSelected = Set.empty } }
+
+
+updateUIDialogAddProjectsToCycleToggleAll : Model -> Model
+updateUIDialogAddProjectsToCycleToggleAll model =
+    let
+        ui_ =
+            model.ui
+
+        allProjectNames =
+            model.projects
+                |> List.map (.name >> projectNameToString)
+                |> Set.fromList
+
+        alreadySelected =
+            areDialogAddProjectsToCycleAllSelected model
+    in
+        { model
+            | ui =
+                { ui_
+                    | dialogAddPlanSelected =
+                        if alreadySelected then
+                            Set.empty
+                        else
+                            allProjectNames
+                }
+        }
+
+
+updateUIDialogAddProjectsToCycleToggle : String -> Model -> Model
+updateUIDialogAddProjectsToCycleToggle projectNameStr model =
+    let
+        ui_ =
+            model.ui
+    in
+        { model
+            | ui =
+                { ui_
+                    | dialogAddPlanSelected = toggle projectNameStr ui_.dialogAddPlanSelected
+                }
+        }
+
+
+areDialogAddProjectsToCycleAllSelected : Model -> Bool
+areDialogAddProjectsToCycleAllSelected model =
+    Set.size model.ui.dialogAddPlanSelected == List.length model.projects
 
 
 
@@ -511,34 +770,122 @@ cyclesTab model =
             , Options.onClick CreateCycle
             ]
             [ text "Add cycle" ]
-        , cycleColumns model.cycles
+        , cycleColumns model
         ]
 
 
-cycleColumns : List Cycle -> Html Msg
-cycleColumns cycles =
+cycleColumns : Model -> Html Msg
+cycleColumns model =
     div [ cs "cycles" ]
-        (cycles
+        (model.cycles
             |> List.reverse
-            |> List.map cycleColumn
+            |> List.map (cycleColumn model)
         )
 
 
-cycleColumn : Cycle -> Html Msg
-cycleColumn cycle =
-    Options.div
+cycleColumn : Model -> Cycle -> Html Msg
+cycleColumn model cycle =
+    div
         [ cs "cycles--column" ]
-        [ cycleCard cycle ]
+        (cycleColumnHeader model cycle :: cycleColumnProjects model cycle)
 
 
-cycleCard : Cycle -> Html Msg
-cycleCard cycle =
-    Card.view
-        [ css "width" "128px"
-        , Color.background (Color.color Color.Pink Color.S500)
-        ]
-        [ Card.title [] [ Card.head [ Color.text Color.white ] [ text <| toString cycle.index ] ]
-        ]
+cycleColumnHeader : Model -> Cycle -> Html Msg
+cycleColumnHeader model cycle =
+    let
+        cycleIdx =
+            cycleIndexToInt cycle.index
+    in
+        Card.view
+            [ cs "cycles--column--header"
+            , css "width" "256px"
+            , Elevation.e2
+            ]
+            [ Card.title []
+                [ Card.head []
+                    [ text <| toString cycle.index ]
+                ]
+            , Card.actions
+                [ Card.border
+
+                -- Modify flexbox to accomodate small text in action block
+                , css "display" "flex"
+                , css "justify-content" "space-between"
+                , css "align-items" "center"
+                , css "padding" "8px 16px 8px 16px"
+                , css "color" "white"
+                ]
+                [ Button.render Mdl
+                    [ 110, cycleIdx ]
+                    model.mdl
+                    [ Button.ripple
+                    , Options.onClick (AddProjectsToCycle cycle.index)
+                    , Dialog.openOn "click"
+                    ]
+                    [ text "Plan projects" ]
+                ]
+            ]
+
+
+cycleColumnProjects : Model -> Cycle -> List (Html Msg)
+cycleColumnProjects model cycle =
+    plannedProjectNamesForCycle cycle.index model
+        |> List.filterMap (\n -> projectForName model n)
+        |> List.map cycleColumnProjectCard
+
+
+cycleColumnProjectCard : Project -> Html Msg
+cycleColumnProjectCard project =
+    let
+        assignmentsTable =
+            Table.table []
+                [ Table.thead []
+                    [ Table.tr []
+                        [ Table.th [] [ Icon.i "format_paint" ]
+                        , Table.th [] [ Icon.i "format_paint" ]
+                        , Table.th [] [ Icon.i "format_paint" ]
+                        ]
+                    ]
+                , Table.tbody []
+                    [ Table.tr []
+                        [ Table.td [] [ text "2" ]
+                        , Table.td [ Table.numeric ] [ text "1" ]
+                        , Table.td [ Table.numeric ] [ text "0" ]
+                        ]
+                    ]
+                ]
+
+        {-
+           [ Options.span [ css "width" "64px", css "text-align" "center" ]
+               [ Icon.i "format_paint" ]
+           , Options.span [ css "width" "64px", css "text-align" "right" ]
+               [ text <| toString "Other text"
+               , Options.span
+                   [ css "color" "rgba(0,0,0,0.37)" ]
+                   [ text "Another one" ]
+               ]
+           ]
+        -}
+    in
+        Card.view
+            [ css "width" "256px"
+            , Elevation.e2
+            ]
+            [ Card.title
+                [ css "flex-direction" "column" ]
+                [ Card.head [] [ text <| toString (projectNameToString project.name) ]
+                , Card.subhead [] [ text "No description for now" ]
+                ]
+            , Card.actions []
+                [ div
+                    [ css "display" "flex"
+                    , css "flex-direction" "column"
+                    , css "padding" "1rem 0"
+                    , css "color" "rgba(0, 0, 0, 0.54)"
+                    ]
+                    [ assignmentsTable ]
+                ]
+            ]
 
 
 projectsTab : Model -> Html Msg
@@ -572,7 +919,7 @@ projectCard model index project =
                 ]
                 []
             , Card.title []
-                [ Card.head [ Color.text Color.white ] [ text project.name ]
+                [ Card.head [ Color.text Color.white ] [ text <| projectNameToString project.name ]
                 , Card.subhead [ Color.text Color.white ] [ text "(No project details for now)" ]
                 ]
             , Card.menu []
@@ -674,17 +1021,29 @@ dialog model =
     in
         case dialogKind of
             DialogNone ->
-                dialogEmpty model
+                dialogError "Unexpected dialog" model
 
             DialogAddProject ->
                 dialogAddProject model
 
+            DialogAddProjectsToCycle cycleIdx ->
+                let
+                    cycle_ =
+                        cycleAtIndex cycleIdx model
+                in
+                    case cycle_ of
+                        Nothing ->
+                            dialogError "Unknown cycle" model
 
-dialogEmpty : Model -> Html Msg
-dialogEmpty model =
+                        Just cycle ->
+                            dialogAddPlan cycle model
+
+
+dialogError : String -> Model -> Html Msg
+dialogError message model =
     Dialog.view
         []
-        [ Dialog.title [] [ text "Unexpected dialog" ]
+        [ Dialog.title [] [ text message ]
         , Dialog.content [] []
         , Dialog.actions []
             [ Button.render Mdl
@@ -705,7 +1064,7 @@ dialogAddProject model =
             [ Textfield.render Mdl
                 [ 6 ]
                 model.mdl
-                [ Options.onInput UIDialogUpdateFieldForProjectName
+                [ Options.onInput UIDialogAddProjectUpdateFieldName
                 , Textfield.label "Name"
                 , Textfield.floatingLabel
                 , Textfield.text_
@@ -729,6 +1088,95 @@ dialogAddProject model =
                 [ text "Cancel" ]
             ]
         ]
+
+
+dialogAddPlan : Cycle -> Model -> Html Msg
+dialogAddPlan cycle model =
+    let
+        cycleIdxInt =
+            cycleIndexToInt cycle.index
+
+        addableProjectNameStrings : List String
+        addableProjectNameStrings =
+            model.projects
+                |> List.map .name
+                |> List.filter (\pn -> not (List.member pn (plannedProjectNamesForCycle cycle.index model)))
+                |> List.map projectNameToString
+
+        dialogTitle =
+            Dialog.title [] [ text ("Plan projects on cycle" ++ (toString cycleIdxInt)) ]
+
+        cancelButton =
+            Button.render Mdl
+                [ 901 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick UIDialogReset
+                ]
+                [ text "Cancel" ]
+
+        noAddableProjectsDialog =
+            Dialog.view []
+                [ dialogTitle
+                , Dialog.content []
+                    [ Html.p [] [ text "All available projects have already been added to this cycle." ]
+                    ]
+                , Dialog.actions [] [ cancelButton ]
+                ]
+    in
+        if List.isEmpty addableProjectNameStrings then
+            noAddableProjectsDialog
+        else
+            Dialog.view []
+                [ dialogTitle
+                , Dialog.content []
+                    [ Table.table []
+                        [ Table.thead []
+                            [ Table.tr []
+                                [ Table.th []
+                                    [ Toggles.checkbox Mdl
+                                        [ -1 ]
+                                        model.mdl
+                                        [ Options.onToggle UIDialogAddProjectsToCycleToggleAll
+                                        , Toggles.value (areDialogAddProjectsToCycleAllSelected model)
+                                        ]
+                                        []
+                                    ]
+                                , Table.th [] [ text "Projects" ]
+                                ]
+                            ]
+                        , Table.tbody []
+                            (addableProjectNameStrings
+                                |> List.indexedMap
+                                    (\idx projectNameStr ->
+                                        Table.tr
+                                            [ Table.selected |> Options.when (Set.member projectNameStr model.ui.dialogAddPlanSelected) ]
+                                            [ Table.td []
+                                                [ Toggles.checkbox Mdl
+                                                    [ idx ]
+                                                    model.mdl
+                                                    [ Options.onToggle (UIDialogAddProjectsToCycleToggle projectNameStr)
+                                                    , Toggles.value <| Set.member projectNameStr model.ui.dialogAddPlanSelected
+                                                    ]
+                                                    []
+                                                ]
+                                            , Table.td [] [ text projectNameStr ]
+                                            ]
+                                    )
+                            )
+                        ]
+                    ]
+                , Dialog.actions []
+                    [ Button.render Mdl
+                        [ 902 ]
+                        model.mdl
+                        [ Dialog.closeOn "click"
+                        , Options.onClick (AddProjectsToCycleFromDialog cycle.index)
+                        ]
+                        [ text "Plan" ]
+                    , cancelButton
+                    ]
+                ]
 
 
 isTextfieldFocused : List Int -> Model -> Bool
