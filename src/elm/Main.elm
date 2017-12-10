@@ -15,11 +15,12 @@ import Material.Grid as Grid
 import Material.Icon as Icon
 import Material.List as List
 import Material.Dropdown.Item as Item
-import Material.Options as Options exposing (cs, css, div, id)
+import Material.Options as Options exposing (cs, css, div, id, span)
 import Material.Select as Select
 import Material.Table as Table
 import Material.Textfield as Textfield
 import Material.Toggles as Toggles
+import Material.Tooltip as Tooltip
 import Material.Typography as Typography
 import Material.Layout as Layout
 import Set exposing (Set)
@@ -164,8 +165,9 @@ type alias UIDialogModel =
 
    # 1xx serie: cycles tab
      110: cycle column, plan project button
-     111: cycle column, header's unassigned counts
-     120: cycle column, assignments (x changes for each role)
+     111: cycle column > header > assignment box > buttons
+     112: cycle column > header > assignment box > tooltips
+     120: cycle column > projects > assignments
 
    # 3xx serie: persons tab
      310: person row delete button
@@ -593,8 +595,8 @@ personNamesAvailableForCycle cycleIdx model =
             |> List.filter (\pn -> not (List.member pn assignedPersonNames))
 
 
-personsForRole : RoleID -> Model -> List Person
-personsForRole roleID model =
+personsForRole : Model -> RoleID -> List Person
+personsForRole model roleID =
     model.persons
         |> List.filter (\p -> p.roleID == roleID)
 
@@ -721,7 +723,7 @@ updateAssignmentsFromDialog planID roleID model =
                         model.persons |> List.map .name
 
                     rolePersonNames =
-                        model |> personsForRole roleID |> List.map .name
+                        personsForRole model roleID |> List.map .name
 
                     otherRolesAssignments =
                         plan.assignments
@@ -746,19 +748,39 @@ countPersonsAssignedForRoleAndCycle roleID cycleIdx model =
 
 countPersonsAssignedForRoleAndPlan : RoleID -> PlanID -> Model -> Int
 countPersonsAssignedForRoleAndPlan roleID planID model =
+    personsAssignedForPlan model planID
+        |> List.filter (\p -> p.roleID == roleID)
+        |> List.length
+
+
+personsAssignedForPlan : Model -> PlanID -> List Person
+personsAssignedForPlan model planID =
+    case planForID planID model of
+        Just plan ->
+            plan.assignments
+                |> List.map .personName
+                |> List.filterMap (personForName model)
+
+        Nothing ->
+            []
+
+
+personsAssignedForCycle : Model -> CycleIndex -> List Person
+personsAssignedForCycle model cycleIdx =
+    model.plans
+        |> List.filter (\p -> Tuple.first p.id == cycleIdx)
+        |> List.map .id
+        |> List.concatMap (personsAssignedForPlan model)
+
+
+personsNotAssignedForCycle : Model -> CycleIndex -> List Person
+personsNotAssignedForCycle model cycleIdx =
     let
         assignedPersons =
-            case planForID planID model of
-                Just plan ->
-                    plan.assignments
-                        |> List.map .personName
-                        |> List.filterMap (personForName model)
-                        |> List.filter (\p -> p.roleID == roleID)
-
-                Nothing ->
-                    []
+            personsAssignedForCycle model cycleIdx
     in
-        List.length assignedPersons
+        model.persons
+            |> List.filter (\p -> not (List.member p assignedPersons))
 
 
 
@@ -793,7 +815,7 @@ prepareForDialogEditAssignments planID roleID model =
             personNamesAvailableForCycle (Tuple.first planID) model
 
         rolePersonsNames =
-            personsForRole roleID model
+            personsForRole model roleID
                 |> List.map .name
 
         newPersons : List ( String, Bool )
@@ -1104,14 +1126,9 @@ cycleColumn model cycle =
 cycleColumnHeader : Model -> Cycle -> Html Msg
 cycleColumnHeader model cycle =
     let
-        notAssignedCounts =
-            roles
-                |> List.map
-                    (\r ->
-                        ( r.id
-                        , (List.length (personsForRole r.id model)) - (countPersonsAssignedForRoleAndCycle r.id cycle.index model)
-                        )
-                    )
+        nonAssignments =
+            personsNotAssignedForCycle model cycle.index
+                |> List.map (\p -> { personName = p.name })
     in
         Card.view
             [ cs "cycles--column--header"
@@ -1120,7 +1137,16 @@ cycleColumnHeader model cycle =
             ]
             [ Card.title []
                 [ Card.head []
-                    [ text <| toString cycle.index ]
+                    [ text <| toString cycle.index
+                    ]
+                ]
+            , Card.title []
+                [ assignmentsBox
+                    [ 112, cycleIndexToInt cycle.index ]
+                    model
+                    Nothing
+                    nonAssignments
+                    "Not assigned: "
                 ]
             , Card.actions
                 [ Card.border
@@ -1131,8 +1157,7 @@ cycleColumnHeader model cycle =
                 , css "align-items" "center"
                 , css "padding" "8px 16px 8px 16px"
                 ]
-                [ assignmentsBox [ 111 ] model.mdl Nothing notAssignedCounts
-                , Button.render Mdl
+                [ Button.render Mdl
                     [ 110, cycleIndexToInt cycle.index ]
                     model.mdl
                     [ Button.ripple
@@ -1151,82 +1176,96 @@ cycleColumnProjects model cycle =
         |> List.indexedMap (cycleColumnProjectCard model cycle.index)
 
 
-assignmentsBox : List Int -> Material.Model -> Maybe (RoleID -> Msg) -> List ( RoleID, Int ) -> Html Msg
-assignmentsBox keyPrefix mdl buttonAction assignmentsCounts =
-    let
-        itemContent : Role -> Int -> Html Msg
-        itemContent role count =
-            div []
-                [ Icon.i role.icon
-                , text <| toString count
-                ]
-
-        itemElement : Int -> Role -> Int -> Html Msg
-        itemElement i role count =
-            case buttonAction of
-                Nothing ->
-                    itemContent role count
-
-                Just action ->
-                    Button.render Mdl
-                        (keyPrefix ++ [ i ])
-                        mdl
-                        [ Button.ripple
-                        , Options.onClick (action role.id)
-                        , Dialog.openOn "click"
-                        ]
-                        [ itemContent role count ]
-    in
-        div []
-            (assignmentsCounts
-                |> List.indexedMap
-                    (\i ( roleID, count ) ->
-                        let
-                            role_ =
-                                roleForID roleID
-                        in
-                            case role_ of
-                                Nothing ->
-                                    div [] []
-
-                                Just role ->
-                                    itemElement i role count
-                    )
-            )
-
-
 cycleColumnProjectCard : Model -> CycleIndex -> Int -> Project -> Html Msg
 cycleColumnProjectCard model cycleIdx projectIdx project =
     let
-        assignmentsCounts =
-            roles
-                |> List.map
-                    (\r ->
-                        ( r.id
-                        , countPersonsAssignedForRoleAndPlan r.id ( cycleIdx, project.name ) model
-                        )
-                    )
+        plan_ =
+            planForID ( cycleIdx, project.name ) model
     in
-        Card.view
-            [ cs "cycles--project-card"
-            , css "width" "256px"
-            , Elevation.e2
-            ]
-            [ Card.title
-                [ css "flex-direction" "column" ]
-                [ Card.head [] [ text <| toString (projectNameToString project.name) ]
-                , Card.subhead [] [ text "No description for now" ]
-                ]
-            , Card.actions
-                [ cs "cycles--project-card__assignments" ]
-                [ (assignmentsBox
-                    [ 120, cycleIndexToInt cycleIdx, projectIdx ]
-                    model.mdl
-                    (Just (EditAssignments ( cycleIdx, project.name )))
-                    assignmentsCounts
-                  )
-                ]
-            ]
+        case plan_ of
+            Nothing ->
+                div [] []
+
+            Just plan ->
+                Card.view
+                    [ cs "cycles--project-card"
+                    , css "width" "256px"
+                    , Elevation.e2
+                    ]
+                    [ Card.title
+                        [ css "flex-direction" "column" ]
+                        [ Card.head [] [ text <| toString (projectNameToString project.name) ]
+                        , Card.subhead [] [ text "No description for now" ]
+                        ]
+                    , Card.actions
+                        [ cs "cycles--project-card__assignments" ]
+                        [ assignmentsBox
+                            [ 120, cycleIndexToInt cycleIdx, projectIdx ]
+                            model
+                            (Just (EditAssignments ( cycleIdx, project.name )))
+                            plan.assignments
+                            "Assigned: "
+                        ]
+                    ]
+
+
+assignmentsBox : List Int -> Model -> Maybe (RoleID -> Msg) -> List Assignment -> String -> Html Msg
+assignmentsBox keyPrefix model buttonAction assignments tooltipTextPrefix =
+    let
+        tooltipAttachment i =
+            Tooltip.attach Mdl (keyPrefix ++ [ i ])
+
+        tooltipRender i personNames =
+            Tooltip.render Mdl
+                (keyPrefix ++ [ i ])
+                model.mdl
+                [ Tooltip.right ]
+                [ text <| tooltipTextPrefix ++ List.foldl (++) "" (List.intersperse ", " personNames) ]
+
+        itemElement : Int -> Role -> List String -> List (Html Msg)
+        itemElement i role personNames =
+            case buttonAction of
+                Nothing ->
+                    [ span
+                        [ tooltipAttachment i ]
+                        [ Icon.i role.icon
+                        , text <| toString (List.length personNames)
+                        ]
+                    , tooltipRender i personNames
+                    ]
+
+                Just action ->
+                    [ Button.render Mdl
+                        (keyPrefix ++ [ i ])
+                        model.mdl
+                        [ Button.ripple
+                        , Options.onClick (action role.id)
+                        , Dialog.openOn "click"
+                        , tooltipAttachment i
+                        ]
+                        [ div []
+                            [ Icon.i role.icon
+                            , text <| toString (List.length personNames)
+                            ]
+                        ]
+                    , tooltipRender i personNames
+                    ]
+    in
+        div []
+            (roles
+                |> List.indexedMap
+                    (\i role ->
+                        let
+                            personNames =
+                                assignments
+                                    |> List.filterMap (\a -> personForName model a.personName)
+                                    |> List.filter (\p -> p.roleID == role.id)
+                                    |> List.map .name
+                        in
+                            itemElement i role personNames
+                    )
+                |> List.foldr (++) []
+            )
 
 
 
@@ -1551,7 +1590,7 @@ dialogEditAssignments : PlanID -> RoleID -> Model -> Html Msg
 dialogEditAssignments planID roleID model =
     let
         personsForRoleNames =
-            personsForRole roleID model
+            personsForRole model roleID
                 |> List.map .name
 
         addablePersonNames : List String
