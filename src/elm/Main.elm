@@ -116,8 +116,8 @@ roleForId_ id remainingMap =
 -- TODO: use Result instead of Maybe
 
 
-roleReadForId : RoleID -> String
-roleReadForId id =
+roleReadForID : RoleID -> String
+roleReadForID id =
     case roleForId id of
         Nothing ->
             "Unexpected role ID"
@@ -154,11 +154,16 @@ type alias Model =
 
 
 type alias UIModel =
-    { dialogKind : DialogKind
-    , dialogFieldName : String
-    , dialogAddPlansSelected : Set String -- project names as String
-    , dialogEditAssignmentsSelected : Set String -- person names
-    , selectedTab : Int
+    { selectedTab : Int
+    , dialog : UIDialogModel
+    }
+
+
+type alias UIDialogModel =
+    { kind : DialogKind
+    , fieldName : String
+    , addPlansSelected : Set String -- project names as String
+    , editAssignmentsPersons : List ( String, Bool ) -- personName, isSelected
     }
 
 
@@ -181,11 +186,17 @@ type alias UIModel =
 
 initialUIModel : UIModel
 initialUIModel =
-    { dialogKind = DialogNone
-    , dialogFieldName = ""
-    , dialogAddPlansSelected = Set.empty
-    , dialogEditAssignmentsSelected = Set.empty
-    , selectedTab = 0
+    { selectedTab = 0
+    , dialog = initialUIDialogModel
+    }
+
+
+initialUIDialogModel : UIDialogModel
+initialUIDialogModel =
+    { kind = DialogNone
+    , fieldName = ""
+    , addPlansSelected = Set.empty
+    , editAssignmentsPersons = []
     }
 
 
@@ -276,7 +287,7 @@ type Msg
     | AddPlansFromDialog CycleIndex
       -- assignments
     | EditAssignments CycleIndex ProjectName RoleID
-    | UpdateAssignmentsFromDialog CycleIndex ProjectName
+    | UpdateAssignmentsFromDialog CycleIndex ProjectName RoleID
       -- ui
     | UISelectTab Int
     | UIDialogAddProjectUpdateFieldName String
@@ -308,16 +319,16 @@ update msg model =
 
             -- PROJECTS
             AddProject ->
-                ( updateUIDialogKind DialogAddProject model, Cmd.none )
+                ( prepareForDialog DialogAddProject model, Cmd.none )
 
             CreateProjectFromDialog ->
                 let
                     newProject =
-                        { name = ProjectName model.ui.dialogFieldName }
+                        { name = ProjectName model.ui.dialog.fieldName }
                 in
                     ( model
                         |> addProject newProject
-                        |> resetDialog
+                        |> updateUIDialogReset
                     , Cmd.none
                     )
 
@@ -352,7 +363,7 @@ update msg model =
                 ( model, Cmd.none )
 
             AddPlans cycleIdx ->
-                ( model |> updateUIDialogKind (DialogAddPlan cycleIdx), Cmd.none )
+                ( model |> prepareForDialog (DialogAddPlan cycleIdx), Cmd.none )
 
             AddPlansFromDialog cycleIdx ->
                 ( model
@@ -363,11 +374,11 @@ update msg model =
 
             -- ASSIGNMENTS
             EditAssignments cycleIdx projectName roleID ->
-                ( model |> updateUIDialogKind (DialogEditAssignments cycleIdx projectName roleID), Cmd.none )
+                ( model |> prepareForDialog (DialogEditAssignments cycleIdx projectName roleID), Cmd.none )
 
-            UpdateAssignmentsFromDialog cycleIdx projectName ->
+            UpdateAssignmentsFromDialog cycleIdx projectName roleID ->
                 ( model
-                    |> addAssignmentsFromDialog cycleIdx projectName
+                    |> updateAssignmentsFromDialog cycleIdx projectName roleID
                     |> updateUIDialogReset
                 , Cmd.none
                 )
@@ -377,7 +388,11 @@ update msg model =
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
 
             UIDialogAddProjectUpdateFieldName name ->
-                ( { model | ui = { ui_ | dialogFieldName = name } }, Cmd.none )
+                let
+                    dialog_ =
+                        model.ui.dialog
+                in
+                    ( model |> updateUIDialog { dialog_ | fieldName = name }, Cmd.none )
 
             UIDialogAddPlansToggleAll ->
                 ( model |> updateUIDialogAddPlansToggleAll, Cmd.none )
@@ -399,7 +414,7 @@ update msg model =
 
 
 
--- UPDATE/CYCLES
+-- UPDATE:CYCLES
 
 
 cycleForIndex : CycleIndex -> Model -> Maybe Cycle
@@ -426,7 +441,7 @@ updateCycleAtIndex cycleIdx newCycle model =
 
 
 
--- UPDATE/PERSONS
+-- UPDATE:PERSONS
 
 
 updatePersonRole : Int -> RoleID -> Model -> Model
@@ -586,14 +601,14 @@ personNamesAvailableForCycle cycleIdx model =
             |> List.filter (\pn -> not (List.member pn assignedPersonNames))
 
 
-personsWithRole : RoleID -> Model -> List Person
-personsWithRole roleID model =
+personsForRole : RoleID -> Model -> List Person
+personsForRole roleID model =
     model.persons
         |> List.filter (\p -> p.roleID == roleID)
 
 
 
--- UPDATE/PLANS
+-- UPDATE:PLANS
 
 
 plannedProjectNamesForCycle : CycleIndex -> Model -> List ProjectName
@@ -611,7 +626,7 @@ addPlansFromDialog cycleIdx model =
 
         selectedProjects : List ProjectName
         selectedProjects =
-            model.ui.dialogAddPlansSelected
+            model.ui.dialog.addPlansSelected
                 |> Set.toList
                 |> List.map (\s -> ProjectName s)
     in
@@ -668,7 +683,7 @@ samePlans planA planB =
 
 
 
--- UPDATE/PROJECTS
+-- UPDATE:PROJECTS
 
 
 addProject : Project -> Model -> Model
@@ -691,19 +706,20 @@ projectForName model projectName =
 
 
 
--- UPDATE/ASSIGNMENTS
+-- UPDATE:ASSIGNMENTS
 
 
-addAssignmentsFromDialog : CycleIndex -> ProjectName -> Model -> Model
-addAssignmentsFromDialog cycleIdx projectName model =
+updateAssignmentsFromDialog : CycleIndex -> ProjectName -> RoleID -> Model -> Model
+updateAssignmentsFromDialog cycleIdx projectName roleID model =
     let
         plan_ =
             planForCycleIndexAndProjectName cycleIdx projectName model
 
         selectedPersonNames : List String
         selectedPersonNames =
-            model.ui.dialogEditAssignmentsSelected
-                |> Set.toList
+            model.ui.dialog.editAssignmentsPersons
+                |> List.filter Tuple.second
+                |> List.map Tuple.first
     in
         case plan_ of
             Nothing ->
@@ -711,12 +727,22 @@ addAssignmentsFromDialog cycleIdx projectName model =
 
             Just plan ->
                 let
-                    newAssignments =
+                    allPersonNames =
+                        model.persons |> List.map .name
+
+                    rolePersonNames =
+                        model |> personsForRole roleID |> List.map .name
+
+                    otherRolesAssignments =
+                        plan.assignments
+                            |> List.filter (\a -> not (List.member a.personName rolePersonNames))
+
+                    newRoleAssignments =
                         selectedPersonNames
                             |> List.map (\pn -> { personName = pn })
 
                     newPlan =
-                        { plan | assignments = plan.assignments ++ newAssignments }
+                        { plan | assignments = otherRolesAssignments ++ newRoleAssignments }
                 in
                     model |> replacePlan newPlan
 
@@ -742,103 +768,177 @@ countPersonsAssigned roleID cycleIdx pjName model =
 
 
 
--- UPDATE/DIALOGS
+-- UPDATE:DIALOG
 
 
-resetDialog : Model -> Model
-resetDialog model =
+prepareForDialog : DialogKind -> Model -> Model
+prepareForDialog kind model =
+    (case kind of
+        DialogEditAssignments cycleIdx projectName roleID ->
+            prepareForDialogEditAssignments cycleIdx projectName roleID model
+
+        _ ->
+            model
+    )
+        |> updateUIDialogKind kind
+
+
+prepareForDialogEditAssignments : CycleIndex -> ProjectName -> RoleID -> Model -> Model
+prepareForDialogEditAssignments cycleIdx projectName roleID model =
     let
         ui_ =
             model.ui
+
+        dialog_ =
+            model.ui.dialog
+
+        plan_ =
+            planForCycleIndexAndProjectName cycleIdx projectName model
+
+        availablePersonsNames =
+            personNamesAvailableForCycle cycleIdx model
+
+        rolePersonsNames =
+            personsForRole roleID model
+                |> List.map .name
+
+        newPersons : List ( String, Bool )
+        newPersons =
+            let
+                assignedPersons =
+                    case plan_ of
+                        Nothing ->
+                            []
+
+                        Just plan ->
+                            plan.assignments
+                                |> List.map (\a -> ( a.personName, True ))
+
+                availablePersons =
+                    availablePersonsNames
+                        |> List.map (\pn -> ( pn, False ))
+            in
+                (assignedPersons ++ availablePersons)
+                    |> List.filter (\( pn, _ ) -> List.member pn rolePersonsNames)
+
+        newDialog =
+            { dialog_ | editAssignmentsPersons = newPersons }
+
+        newUI =
+            { ui_ | dialog = newDialog }
     in
-        { model | ui = { ui_ | dialogFieldName = "" } }
+        model |> updateUIDialog newDialog
 
 
-updateUIDialogReset : Model -> Model
-updateUIDialogReset model =
-    model
-        |> updateUIDialogKind DialogNone
-        |> updateUIDialogAddPlansToggleNone
-        |> updateUIDialogEditAssignmentsToggleNone
-
-
-updateUIDialogKind : DialogKind -> Model -> Model
-updateUIDialogKind newKind model =
+updateUIDialog : UIDialogModel -> Model -> Model
+updateUIDialog newDialog model =
     let
         ui_ =
             model.ui
 
         newUI =
-            { ui_ | dialogKind = newKind }
+            { ui_ | dialog = newDialog }
     in
         { model | ui = newUI }
 
 
-updateUIDialogAddPlansToggleNone : Model -> Model
-updateUIDialogAddPlansToggleNone model =
+updateUIDialogReset : Model -> Model
+updateUIDialogReset model =
     let
         ui_ =
             model.ui
+
+        newUI =
+            { ui_ | dialog = initialUIDialogModel }
     in
-        { model | ui = { ui_ | dialogAddPlansSelected = Set.empty } }
+        { model | ui = newUI }
+
+
+updateUIDialogKind : DialogKind -> Model -> Model
+updateUIDialogKind kind model =
+    let
+        dialog_ =
+            model.ui.dialog
+    in
+        model |> updateUIDialog { dialog_ | kind = kind }
+
+
+
+-- UPDATE:DIALOG:PLANS
+
+
+updateUIDialogAddPlansSelected : Model -> Set String -> Model
+updateUIDialogAddPlansSelected model newPlansSelected =
+    let
+        dialog_ =
+            model.ui.dialog
+    in
+        model |> updateUIDialog { dialog_ | addPlansSelected = newPlansSelected }
+
+
+updateUIDialogAddPlansToggleNone : Model -> Model
+updateUIDialogAddPlansToggleNone model =
+    updateUIDialogAddPlansSelected model Set.empty
 
 
 updateUIDialogAddPlansToggleAll : Model -> Model
 updateUIDialogAddPlansToggleAll model =
     let
-        ui_ =
-            model.ui
-
         allProjectNames =
             model.projects
                 |> List.map (.name >> projectNameToString)
                 |> Set.fromList
 
-        alreadySelected =
-            areDialogAddPlansAllSelected model
+        newPlansSelected =
+            if areDialogAddPlansAllSelected model then
+                Set.empty
+            else
+                allProjectNames
     in
-        { model
-            | ui =
-                { ui_
-                    | dialogAddPlansSelected =
-                        if alreadySelected then
-                            Set.empty
-                        else
-                            allProjectNames
-                }
-        }
+        updateUIDialogAddPlansSelected model newPlansSelected
 
 
 updateUIDialogAddPlansToggle : String -> Model -> Model
 updateUIDialogAddPlansToggle projectNameStr model =
     let
-        ui_ =
-            model.ui
+        dialog_ =
+            model.ui.dialog
+
+        newPlansSelected =
+            toggle projectNameStr dialog_.addPlansSelected
     in
-        { model
-            | ui =
-                { ui_
-                    | dialogAddPlansSelected = toggle projectNameStr ui_.dialogAddPlansSelected
-                }
-        }
+        updateUIDialogAddPlansSelected model newPlansSelected
 
 
 areDialogAddPlansAllSelected : Model -> Bool
 areDialogAddPlansAllSelected model =
-    Set.size model.ui.dialogAddPlansSelected == List.length model.projects
+    Set.size model.ui.dialog.addPlansSelected == List.length model.projects
 
 
-updateUIDialogEditAssignmentsToggleNone : Model -> Model
-updateUIDialogEditAssignmentsToggleNone model =
+
+-- UPDATE/DIALOG:ASSIGNMENTS
+
+
+updateUIDialogEditAssignmentsReset : Model -> Model
+updateUIDialogEditAssignmentsReset model =
     let
         ui_ =
             model.ui
+
+        dialog_ =
+            ui_.dialog
+
+        newDialogEditAssignmentsPersons =
+            ui_.dialog.editAssignmentsPersons
+                |> List.map (\( pn, _ ) -> ( pn, False ))
+
+        newDialog =
+            { dialog_ | editAssignmentsPersons = newDialogEditAssignmentsPersons }
+
+        newUI =
+            { ui_ | dialog = newDialog }
     in
-        { model | ui = { ui_ | dialogEditAssignmentsSelected = Set.empty } }
-
-
-
--- BUG: this assign all persons, even the ones that are not displayed
+        { model | ui = newUI }
 
 
 updateUIDialogEditAssignmentsToggleAll : Model -> Model
@@ -847,24 +947,23 @@ updateUIDialogEditAssignmentsToggleAll model =
         ui_ =
             model.ui
 
-        allPersonsNames =
-            model.persons
-                |> List.map .name
-                |> Set.fromList
+        dialog_ =
+            ui_.dialog
 
         alreadySelected =
-            areDialogEditAssignmentsAllSelected model
+            List.all Tuple.second ui_.dialog.editAssignmentsPersons
+
+        newDialogEditAssignmentsPersons =
+            dialog_.editAssignmentsPersons
+                |> List.map (\( pn, _ ) -> ( pn, not alreadySelected ))
+
+        newDialog =
+            { dialog_ | editAssignmentsPersons = newDialogEditAssignmentsPersons }
+
+        newUI =
+            { ui_ | dialog = newDialog }
     in
-        { model
-            | ui =
-                { ui_
-                    | dialogEditAssignmentsSelected =
-                        if alreadySelected then
-                            Set.empty
-                        else
-                            allPersonsNames
-                }
-        }
+        { model | ui = newUI }
 
 
 updateUIDialogEditAssignmentsToggle : String -> Model -> Model
@@ -872,18 +971,33 @@ updateUIDialogEditAssignmentsToggle personName model =
     let
         ui_ =
             model.ui
+
+        dialog_ =
+            ui_.dialog
+
+        newDialogEditAssignmentsPersons =
+            ui_.dialog.editAssignmentsPersons
+                |> List.map
+                    (\( pn, selected ) ->
+                        if pn == personName then
+                            ( pn, not selected )
+                        else
+                            ( pn, selected )
+                    )
+
+        newDialog =
+            { dialog_ | editAssignmentsPersons = newDialogEditAssignmentsPersons }
+
+        newUi =
+            { ui_ | dialog = newDialog }
     in
-        { model
-            | ui =
-                { ui_
-                    | dialogEditAssignmentsSelected = toggle personName ui_.dialogEditAssignmentsSelected
-                }
-        }
+        { model | ui = newUi }
 
 
 areDialogEditAssignmentsAllSelected : Model -> Bool
 areDialogEditAssignmentsAllSelected model =
-    Set.size model.ui.dialogEditAssignmentsSelected == List.length model.persons
+    model.ui.dialog.editAssignmentsPersons
+        |> List.all Tuple.second
 
 
 
@@ -1070,6 +1184,10 @@ cycleColumnProjectCard model cycleIdx projectIdx project =
             ]
 
 
+
+-- VIEW:PROJECTS
+
+
 projectsTab : Model -> Html Msg
 projectsTab model =
     div []
@@ -1115,6 +1233,10 @@ projectCard model index project =
         ]
 
 
+
+-- VIEW:PERSONS
+
+
 personsTab : Model -> Html Msg
 personsTab model =
     div []
@@ -1145,7 +1267,7 @@ personsTable model =
                 [ Select.label "Role"
                 , Select.floatingLabel
                 , Select.ripple
-                , Select.value <| roleReadForId person.roleID
+                , Select.value <| roleReadForID person.roleID
                 ]
                 (allRoleIds
                     |> List.map
@@ -1153,7 +1275,7 @@ personsTable model =
                             Select.item
                                 [ Item.onSelect (UpdatePersonRole pIndex roleID)
                                 ]
-                                [ text <| roleReadForId roleID
+                                [ text <| roleReadForID roleID
                                 ]
                         )
                 )
@@ -1195,11 +1317,15 @@ personsTable model =
             )
 
 
+
+-- VIEW:DIALOG
+
+
 dialog : Model -> Html Msg
 dialog model =
     let
         dialogKind =
-            model.ui.dialogKind
+            model.ui.dialog.kind
     in
         case dialogKind of
             DialogNone ->
@@ -1252,6 +1378,10 @@ dialogError message model =
         ]
 
 
+
+-- VIEW:DIALOG:PROJECT
+
+
 dialogAddProject : Model -> Html Msg
 dialogAddProject model =
     Dialog.view
@@ -1285,6 +1415,10 @@ dialogAddProject model =
                 [ text "Cancel" ]
             ]
         ]
+
+
+
+-- VIEW:DIALOG:PLAN
 
 
 dialogAddPlan : Cycle -> Model -> Html Msg
@@ -1347,13 +1481,13 @@ dialogAddPlan cycle model =
                                 |> List.indexedMap
                                     (\idx projectNameStr ->
                                         Table.tr
-                                            [ Table.selected |> Options.when (Set.member projectNameStr model.ui.dialogAddPlansSelected) ]
+                                            [ Table.selected |> Options.when (Set.member projectNameStr model.ui.dialog.addPlansSelected) ]
                                             [ Table.td []
                                                 [ Toggles.checkbox Mdl
                                                     [ idx ]
                                                     model.mdl
                                                     [ Options.onToggle (UIDialogAddPlansToggle projectNameStr)
-                                                    , Toggles.value <| Set.member projectNameStr model.ui.dialogAddPlansSelected
+                                                    , Toggles.value <| Set.member projectNameStr model.ui.dialog.addPlansSelected
                                                     ]
                                                     []
                                                 ]
@@ -1376,6 +1510,10 @@ dialogAddPlan cycle model =
                 ]
 
 
+
+-- VIEW:DIALOG:ASSIGNMENTS
+
+
 dialogEditAssignments : Cycle -> Project -> RoleID -> Model -> Html Msg
 dialogEditAssignments cycle project roleID model =
     let
@@ -1385,14 +1523,14 @@ dialogEditAssignments cycle project roleID model =
         projectNameStr =
             projectNameToString project.name
 
-        personsWithRoleNames =
-            personsWithRole roleID model
+        personsForRoleNames =
+            personsForRole roleID model
                 |> List.map .name
 
         addablePersonNames : List String
         addablePersonNames =
             personNamesAvailableForCycle cycle.index model
-                |> List.filter (\pn -> List.member pn personsWithRoleNames)
+                |> List.filter (\pn -> List.member pn personsForRoleNames)
 
         dialogTitle =
             Dialog.title [] [ text "Assign persons" ]
@@ -1415,7 +1553,7 @@ dialogEditAssignments cycle project roleID model =
                 , Dialog.actions [] [ cancelButton ]
                 ]
     in
-        if List.isEmpty addablePersonNames then
+        if List.isEmpty model.ui.dialog.editAssignmentsPersons then
             noAddablePersonsDialog
         else
             Dialog.view []
@@ -1433,25 +1571,27 @@ dialogEditAssignments cycle project roleID model =
                                         ]
                                         []
                                     ]
-                                , Table.th [] [ text "Projects" ]
+                                , Table.th [] [ text <| roleReadForID roleID ]
                                 ]
                             ]
                         , Table.tbody []
-                            (addablePersonNames
+                            (model.ui.dialog.editAssignmentsPersons
                                 |> List.indexedMap
-                                    (\idx personName ->
+                                    (\idx ( pn, isSelected ) ->
                                         Table.tr
-                                            [ Table.selected |> Options.when (Set.member personName model.ui.dialogEditAssignmentsSelected) ]
+                                            [ Table.selected
+                                                |> Options.when isSelected
+                                            ]
                                             [ Table.td []
                                                 [ Toggles.checkbox Mdl
                                                     [ idx ]
                                                     model.mdl
-                                                    [ Options.onToggle (UIDialogEditAssignmentsToggle personName)
-                                                    , Toggles.value <| Set.member personName model.ui.dialogEditAssignmentsSelected
+                                                    [ Options.onToggle (UIDialogEditAssignmentsToggle pn)
+                                                    , Toggles.value isSelected
                                                     ]
                                                     []
                                                 ]
-                                            , Table.td [] [ text personName ]
+                                            , Table.td [] [ text pn ]
                                             ]
                                     )
                             )
@@ -1462,7 +1602,7 @@ dialogEditAssignments cycle project roleID model =
                         [ 902 ]
                         model.mdl
                         [ Dialog.closeOn "click"
-                        , Options.onClick (UpdateAssignmentsFromDialog cycle.index project.name)
+                        , Options.onClick (UpdateAssignmentsFromDialog cycle.index project.name roleID)
                         ]
                         [ text "Plan" ]
                     , cancelButton
