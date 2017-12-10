@@ -63,10 +63,13 @@ type ProjectName
 
 
 type alias Plan =
-    { cycleIndex : CycleIndex
-    , projectName : ProjectName
+    { id : PlanID
     , assignments : List Assignment
     }
+
+
+type alias PlanID =
+    ( CycleIndex, ProjectName )
 
 
 type alias Person =
@@ -94,22 +97,11 @@ roles =
     ]
 
 
-roleForId : RoleID -> Maybe Role
-roleForId id =
-    roleForId_ id roles
-
-
-roleForId_ : RoleID -> List Role -> Maybe Role
-roleForId_ id remainingMap =
-    case remainingMap of
-        [] ->
-            Nothing
-
-        h :: t ->
-            if h.id == id then
-                Just h
-            else
-                roleForId_ id t
+roleForID : RoleID -> Maybe Role
+roleForID id =
+    roles
+        |> List.filter (\r -> r.id == id)
+        |> List.head
 
 
 
@@ -118,7 +110,7 @@ roleForId_ id remainingMap =
 
 roleReadForID : RoleID -> String
 roleReadForID id =
-    case roleForId id of
+    case roleForID id of
         Nothing ->
             "Unexpected role ID"
 
@@ -140,7 +132,7 @@ type DialogKind
     = DialogNone
     | DialogAddProject
     | DialogAddPlan CycleIndex
-    | DialogEditAssignments CycleIndex ProjectName RoleID
+    | DialogEditAssignments PlanID RoleID
 
 
 type alias Model =
@@ -172,6 +164,7 @@ type alias UIDialogModel =
 
    # 1xx serie: cycles tab
      110: cycle column, plan project button
+     111: cycle column, header's unassigned counts
      120: cycle column, assignments (x changes for each role)
 
    # 3xx serie: persons tab
@@ -232,8 +225,7 @@ initialModelForDev =
             ]
 
         plans =
-            [ { cycleIndex = CycleIndex 1
-              , projectName = ProjectName "Company Pages #1"
+            [ { id = ( CycleIndex 1, ProjectName "Company Pages #1" )
               , assignments = []
               }
             ]
@@ -286,8 +278,8 @@ type Msg
     | AddPlans CycleIndex
     | AddPlansFromDialog CycleIndex
       -- assignments
-    | EditAssignments CycleIndex ProjectName RoleID
-    | UpdateAssignmentsFromDialog CycleIndex ProjectName RoleID
+    | EditAssignments PlanID RoleID
+    | UpdateAssignmentsFromDialog PlanID RoleID
       -- ui
     | UISelectTab Int
     | UIDialogAddProjectUpdateFieldName String
@@ -373,12 +365,12 @@ update msg model =
                 )
 
             -- ASSIGNMENTS
-            EditAssignments cycleIdx projectName roleID ->
-                ( model |> prepareForDialog (DialogEditAssignments cycleIdx projectName roleID), Cmd.none )
+            EditAssignments planID roleID ->
+                ( model |> prepareForDialog (DialogEditAssignments planID roleID), Cmd.none )
 
-            UpdateAssignmentsFromDialog cycleIdx projectName roleID ->
+            UpdateAssignmentsFromDialog planID roleID ->
                 ( model
-                    |> updateAssignmentsFromDialog cycleIdx projectName roleID
+                    |> updateAssignmentsFromDialog planID roleID
                     |> updateUIDialogReset
                 , Cmd.none
                 )
@@ -446,7 +438,7 @@ updateCycleAtIndex cycleIdx newCycle model =
 
 updatePersonRole : Int -> RoleID -> Model -> Model
 updatePersonRole personIndex newRoleId model =
-    case roleForId newRoleId of
+    case roleForID newRoleId of
         Nothing ->
             model
 
@@ -614,8 +606,9 @@ personsForRole roleID model =
 plannedProjectNamesForCycle : CycleIndex -> Model -> List ProjectName
 plannedProjectNamesForCycle cycleIdx model =
     model.plans
-        |> List.filter (\p -> p.cycleIndex == cycleIdx)
-        |> List.map .projectName
+        |> List.map .id
+        |> List.filter (\pid -> Tuple.first pid == cycleIdx)
+        |> List.map Tuple.second
 
 
 addPlansFromDialog : CycleIndex -> Model -> Model
@@ -638,7 +631,7 @@ addPlansFromDialog cycleIdx model =
                 let
                     newPlans =
                         selectedProjects
-                            |> List.map (\pn -> { cycleIndex = cycleIdx, projectName = pn, assignments = [] })
+                            |> List.map (\pn -> { id = ( cycleIdx, pn ), assignments = [] })
                 in
                     model |> addPlans newPlans
 
@@ -667,19 +660,19 @@ replacePlan newPlan model =
 plansForCycleIndex : CycleIndex -> Model -> List Plan
 plansForCycleIndex cycleIdx model =
     model.plans
-        |> List.filter (\p -> p.cycleIndex == cycleIdx)
+        |> List.filter (\p -> Tuple.first p.id == cycleIdx)
 
 
-planForCycleIndexAndProjectName : CycleIndex -> ProjectName -> Model -> Maybe Plan
-planForCycleIndexAndProjectName cycleIdx projectName model =
+planForID : PlanID -> Model -> Maybe Plan
+planForID planID model =
     model.plans
-        |> List.filter (\p -> p.cycleIndex == cycleIdx && p.projectName == projectName)
+        |> List.filter (\p -> p.id == planID)
         |> List.head
 
 
 samePlans : Plan -> Plan -> Bool
 samePlans planA planB =
-    planA.cycleIndex == planB.cycleIndex && planA.projectName == planB.projectName
+    planA.id == planB.id
 
 
 
@@ -709,19 +702,16 @@ projectForName model projectName =
 -- UPDATE:ASSIGNMENTS
 
 
-updateAssignmentsFromDialog : CycleIndex -> ProjectName -> RoleID -> Model -> Model
-updateAssignmentsFromDialog cycleIdx projectName roleID model =
+updateAssignmentsFromDialog : PlanID -> RoleID -> Model -> Model
+updateAssignmentsFromDialog planID roleID model =
     let
-        plan_ =
-            planForCycleIndexAndProjectName cycleIdx projectName model
-
         selectedPersonNames : List String
         selectedPersonNames =
             model.ui.dialog.editAssignmentsPersons
                 |> List.filter Tuple.second
                 |> List.map Tuple.first
     in
-        case plan_ of
+        case planForID planID model of
             Nothing ->
                 model
 
@@ -747,14 +737,18 @@ updateAssignmentsFromDialog cycleIdx projectName roleID model =
                     model |> replacePlan newPlan
 
 
-countPersonsAssigned : RoleID -> CycleIndex -> ProjectName -> Model -> Int
-countPersonsAssigned roleID cycleIdx pjName model =
-    let
-        plan_ =
-            planForCycleIndexAndProjectName cycleIdx pjName model
+countPersonsAssignedForRoleAndCycle : RoleID -> CycleIndex -> Model -> Int
+countPersonsAssignedForRoleAndCycle roleID cycleIdx model =
+    plansForCycleIndex cycleIdx model
+        |> List.map (\p -> countPersonsAssignedForRoleAndPlan roleID p.id model)
+        |> List.sum
 
+
+countPersonsAssignedForRoleAndPlan : RoleID -> PlanID -> Model -> Int
+countPersonsAssignedForRoleAndPlan roleID planID model =
+    let
         assignedPersons =
-            case plan_ of
+            case planForID planID model of
                 Just plan ->
                     plan.assignments
                         |> List.map .personName
@@ -774,8 +768,8 @@ countPersonsAssigned roleID cycleIdx pjName model =
 prepareForDialog : DialogKind -> Model -> Model
 prepareForDialog kind model =
     (case kind of
-        DialogEditAssignments cycleIdx projectName roleID ->
-            prepareForDialogEditAssignments cycleIdx projectName roleID model
+        DialogEditAssignments planID roleID ->
+            prepareForDialogEditAssignments planID roleID model
 
         _ ->
             model
@@ -783,8 +777,8 @@ prepareForDialog kind model =
         |> updateUIDialogKind kind
 
 
-prepareForDialogEditAssignments : CycleIndex -> ProjectName -> RoleID -> Model -> Model
-prepareForDialogEditAssignments cycleIdx projectName roleID model =
+prepareForDialogEditAssignments : PlanID -> RoleID -> Model -> Model
+prepareForDialogEditAssignments planID roleID model =
     let
         ui_ =
             model.ui
@@ -793,10 +787,10 @@ prepareForDialogEditAssignments cycleIdx projectName roleID model =
             model.ui.dialog
 
         plan_ =
-            planForCycleIndexAndProjectName cycleIdx projectName model
+            planForID planID model
 
         availablePersonsNames =
-            personNamesAvailableForCycle cycleIdx model
+            personNamesAvailableForCycle (Tuple.first planID) model
 
         rolePersonsNames =
             personsForRole roleID model
@@ -1073,6 +1067,10 @@ headerView =
     ]
 
 
+
+-- VIEW:CYCLE
+
+
 cyclesTab : Model -> Html Msg
 cyclesTab model =
     div []
@@ -1106,8 +1104,14 @@ cycleColumn model cycle =
 cycleColumnHeader : Model -> Cycle -> Html Msg
 cycleColumnHeader model cycle =
     let
-        cycleIdx =
-            cycleIndexToInt cycle.index
+        notAssignedCounts =
+            roles
+                |> List.map
+                    (\r ->
+                        ( r.id
+                        , (List.length (personsForRole r.id model)) - (countPersonsAssignedForRoleAndCycle r.id cycle.index model)
+                        )
+                    )
     in
         Card.view
             [ cs "cycles--column--header"
@@ -1126,10 +1130,10 @@ cycleColumnHeader model cycle =
                 , css "justify-content" "space-between"
                 , css "align-items" "center"
                 , css "padding" "8px 16px 8px 16px"
-                , css "color" "white"
                 ]
-                [ Button.render Mdl
-                    [ 110, cycleIdx ]
+                [ assignmentsBox [ 111 ] model.mdl Nothing notAssignedCounts
+                , Button.render Mdl
+                    [ 110, cycleIndexToInt cycle.index ]
                     model.mdl
                     [ Button.ripple
                     , Options.onClick (AddPlans cycle.index)
@@ -1147,25 +1151,60 @@ cycleColumnProjects model cycle =
         |> List.indexedMap (cycleColumnProjectCard model cycle.index)
 
 
+assignmentsBox : List Int -> Material.Model -> Maybe (RoleID -> Msg) -> List ( RoleID, Int ) -> Html Msg
+assignmentsBox keyPrefix mdl buttonAction assignmentsCounts =
+    let
+        itemContent : Role -> Int -> Html Msg
+        itemContent role count =
+            div []
+                [ Icon.i role.icon
+                , text <| toString count
+                ]
+
+        itemElement : Int -> Role -> Int -> Html Msg
+        itemElement i role count =
+            case buttonAction of
+                Nothing ->
+                    itemContent role count
+
+                Just action ->
+                    Button.render Mdl
+                        (keyPrefix ++ [ i ])
+                        mdl
+                        [ Button.ripple
+                        , Options.onClick (action role.id)
+                        , Dialog.openOn "click"
+                        ]
+                        [ itemContent role count ]
+    in
+        div []
+            (assignmentsCounts
+                |> List.indexedMap
+                    (\i ( roleID, count ) ->
+                        let
+                            role_ =
+                                roleForID roleID
+                        in
+                            case role_ of
+                                Nothing ->
+                                    div [] []
+
+                                Just role ->
+                                    itemElement i role count
+                    )
+            )
+
+
 cycleColumnProjectCard : Model -> CycleIndex -> Int -> Project -> Html Msg
 cycleColumnProjectCard model cycleIdx projectIdx project =
     let
-        assignments =
+        assignmentsCounts =
             roles
-                |> List.indexedMap
-                    (\i r ->
-                        Button.render Mdl
-                            [ 120, cycleIndexToInt cycleIdx, projectIdx, i ]
-                            model.mdl
-                            [ Button.ripple
-                            , Options.onClick (EditAssignments cycleIdx project.name r.id)
-                            , Dialog.openOn "click"
-                            ]
-                            [ div []
-                                [ Icon.i <| r.icon
-                                , text <| toString (countPersonsAssigned r.id cycleIdx project.name model)
-                                ]
-                            ]
+                |> List.map
+                    (\r ->
+                        ( r.id
+                        , countPersonsAssignedForRoleAndPlan r.id ( cycleIdx, project.name ) model
+                        )
                     )
     in
         Card.view
@@ -1180,7 +1219,13 @@ cycleColumnProjectCard model cycleIdx projectIdx project =
                 ]
             , Card.actions
                 [ cs "cycles--project-card__assignments" ]
-                [ div [] assignments ]
+                [ (assignmentsBox
+                    [ 120, cycleIndexToInt cycleIdx, projectIdx ]
+                    model.mdl
+                    (Just (EditAssignments ( cycleIdx, project.name )))
+                    assignmentsCounts
+                  )
+                ]
             ]
 
 
@@ -1346,20 +1391,8 @@ dialog model =
                         Just cycle ->
                             dialogAddPlan cycle model
 
-            DialogEditAssignments cycleIdx projectName roleID ->
-                let
-                    cycle_ =
-                        cycleForIndex cycleIdx model
-
-                    project_ =
-                        projectForName model projectName
-                in
-                    case ( cycle_, project_ ) of
-                        ( Just cycle, Just project ) ->
-                            dialogEditAssignments cycle project roleID model
-
-                        _ ->
-                            dialogError "Unknown cycle or project" model
+            DialogEditAssignments planID roleID ->
+                dialogEditAssignments planID roleID model
 
 
 dialogError : String -> Model -> Html Msg
@@ -1514,22 +1547,16 @@ dialogAddPlan cycle model =
 -- VIEW:DIALOG:ASSIGNMENTS
 
 
-dialogEditAssignments : Cycle -> Project -> RoleID -> Model -> Html Msg
-dialogEditAssignments cycle project roleID model =
+dialogEditAssignments : PlanID -> RoleID -> Model -> Html Msg
+dialogEditAssignments planID roleID model =
     let
-        cycleIdxInt =
-            cycleIndexToInt cycle.index
-
-        projectNameStr =
-            projectNameToString project.name
-
         personsForRoleNames =
             personsForRole roleID model
                 |> List.map .name
 
         addablePersonNames : List String
         addablePersonNames =
-            personNamesAvailableForCycle cycle.index model
+            personNamesAvailableForCycle (Tuple.first planID) model
                 |> List.filter (\pn -> List.member pn personsForRoleNames)
 
         dialogTitle =
@@ -1602,7 +1629,7 @@ dialogEditAssignments cycle project roleID model =
                         [ 902 ]
                         model.mdl
                         [ Dialog.closeOn "click"
-                        , Options.onClick (UpdateAssignmentsFromDialog cycle.index project.name roleID)
+                        , Options.onClick (UpdateAssignmentsFromDialog planID roleID)
                         ]
                         [ text "Plan" ]
                     , cancelButton
