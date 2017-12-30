@@ -6,6 +6,13 @@ import Date.Extra as Date
 import Dict exposing (Dict)
 import Html exposing (Html, text)
 import Html.Attributes as A exposing (class, href)
+import Http
+import Json.Decode
+import Json.Decode.Extra
+
+
+--import Json.Encode
+
 import List as L
 import Material
 import Material.Button as Button
@@ -42,14 +49,19 @@ toggle x set =
 
 
 type alias Model =
+    { state : State
+    , mdl : Material.Model
+    , ui : UIModel
+    }
+
+
+type alias State =
     { roles : List Role
     , statuses : List Status
     , cycles : List Cycle -- sorted by index, desc
     , persons : List Person
     , plans : List Plan
     , projects : List Project
-    , mdl : Material.Model
-    , ui : UIModel
     }
 
 
@@ -98,7 +110,9 @@ type alias Plan =
 
 
 type alias PlanID =
-    ( CycleIndex, ProjectName )
+    { cycleIndex : CycleIndex
+    , projectName : ProjectName
+    }
 
 
 
@@ -218,14 +232,20 @@ type DialogKind
 
 defaultModel : Model
 defaultModel =
+    { state = defaultState
+    , mdl = Material.model
+    , ui = defaultUIModel Nothing
+    }
+
+
+defaultState : State
+defaultState =
     { roles = []
     , statuses = []
     , cycles = []
     , persons = []
     , plans = []
     , projects = []
-    , mdl = Material.model
-    , ui = defaultUIModel Nothing
     }
 
 
@@ -310,7 +330,7 @@ defaultModelForDev =
                     []
 
         plans =
-            [ { id = ( CycleIndex 1, ProjectName "Company Pages #1" )
+            [ { id = (PlanID (CycleIndex 1) (ProjectName "Company Pages #1"))
               , assignments = [ { personName = "Raphaëlle" } ]
               , statusRecords = statusRecords
               }
@@ -318,13 +338,17 @@ defaultModelForDev =
 
         projects =
             [ { name = ProjectName "Company Pages #1" }, { name = ProjectName "Event Newsletter" } ]
+
+        state =
+            { roles = roles
+            , statuses = statuses
+            , cycles = cycles
+            , persons = persons
+            , plans = plans
+            , projects = projects
+            }
     in
-        { roles = roles
-        , statuses = statuses
-        , cycles = cycles
-        , persons = persons
-        , plans = plans
-        , projects = projects
+        { state = state
         , mdl = Material.model
         , ui = defaultUIModel defaultMaybeDate
         }
@@ -334,7 +358,7 @@ nextIndex : Model -> CycleIndex
 nextIndex model =
     let
         cycles =
-            model.cycles
+            model.state.cycles
     in
         case cycles of
             [] ->
@@ -372,6 +396,8 @@ type Msg
       -- status records
     | AddStatusRecord PlanID
     | CreateStatusRecordFromDialog PlanID
+      -- commands
+    | FetchLatestStateDone (Result Http.Error State)
       -- ui
     | UI_SelectTab Int
     | UI_Dialog_AddProjectUpdateFieldName String
@@ -443,19 +469,22 @@ update msg model =
                 in
                     ( { model | ui = defaultUIModel (Just date) }, Cmd.none )
 
-            UI_Dialog_AddStatusRecord_PrepareAndOpen planID date ->
-                prepareForDialogAddStatusRecord planID date model
-
             -- Events
             CreateCycle ->
                 let
+                    state_ =
+                        model.state
+
                     newCycle =
                         { index = nextIndex model }
 
                     newCycles =
-                        newCycle :: model.cycles
+                        newCycle :: model.state.cycles
+
+                    newState =
+                        { state_ | cycles = newCycles }
                 in
-                    ( { model | cycles = newCycles }, Cmd.none )
+                    ( { model | state = newState }, Cmd.none )
 
             -- PROJECTS
             AddProject ->
@@ -530,6 +559,11 @@ update msg model =
                 , Cmd.none
                 )
 
+            -- COMMANDS
+            FetchLatestStateDone res ->
+                -- TODO
+                ( model, Cmd.none )
+
             -- UI
             UI_SelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
@@ -553,6 +587,9 @@ update msg model =
             UI_Dialog_EditAssignmentsToggle personName ->
                 ( model |> update_UI_Dialog_EditAssignmentsToggle personName, Cmd.none )
 
+            UI_Dialog_AddStatusRecord_PrepareAndOpen planID date ->
+                prepareForDialogAddStatusRecord planID date model
+
             UI_Dialog_AddStatusRecord_SelectStatus newStatusID ->
                 ( model |> update_UI_Dialog_AddStatusRecord_SelectedStatusID newStatusID, Cmd.none )
 
@@ -575,7 +612,7 @@ update msg model =
 
 cycleForIndex : CycleIndex -> Model -> Maybe Cycle
 cycleForIndex cycleIdx model =
-    model.cycles
+    model.state.cycles
         |> List.filter (\c -> c.index == cycleIdx)
         |> List.head
 
@@ -583,8 +620,11 @@ cycleForIndex cycleIdx model =
 updateCycleAtIndex : CycleIndex -> Cycle -> Model -> Model
 updateCycleAtIndex cycleIdx newCycle model =
     let
+        state_ =
+            model.state
+
         newCycles =
-            model.cycles
+            state_.cycles
                 |> List.map
                     (\c ->
                         if c.index == cycleIdx then
@@ -592,8 +632,11 @@ updateCycleAtIndex cycleIdx newCycle model =
                         else
                             c
                     )
+
+        newState =
+            { state_ | cycles = newCycles }
     in
-        { model | cycles = newCycles }
+        { model | state = newState }
 
 
 
@@ -608,25 +651,37 @@ updatePersonRole personIndex newRoleId model =
 
         Just role ->
             let
+                state_ =
+                    model.state
+
                 updatePerson index person =
                     if index == personIndex then
                         { person | roleID = role.id }
                     else
                         person
+
+                newState =
+                    { state_ | persons = state_.persons |> List.indexedMap updatePerson }
             in
-                { model | persons = model.persons |> List.indexedMap updatePerson }
+                { model | state = newState }
 
 
 updatePersonName : Int -> String -> Model -> Model
 updatePersonName personIndex newName model =
     let
+        state_ =
+            model.state
+
         updatePerson index person =
             if index == personIndex then
                 { person | name = newName }
             else
                 person
+
+        newState =
+            { state_ | persons = state_.persons |> List.indexedMap updatePerson }
     in
-        { model | persons = model.persons |> List.indexedMap updatePerson }
+        { model | state = newState }
 
 
 isPersonNameAlreadyTakenAtIndex : Int -> Model -> Bool
@@ -636,7 +691,7 @@ isPersonNameAlreadyTakenAtIndex pIndex model =
             False
 
         Just personAtIndex_ ->
-            (model.persons
+            (model.state.persons
                 |> List.filter (\p -> p.name == personAtIndex_.name)
                 |> List.length
             )
@@ -659,7 +714,7 @@ isPersonNameEmptyAtIndex pIndex model =
 
 personAtIndex : Int -> Model -> Maybe Person
 personAtIndex pIndex model =
-    model.persons
+    model.state.persons
         |> L.drop pIndex
         |> L.head
 
@@ -692,10 +747,16 @@ removeInvalidPersonAtIndex pIndex model =
 removePersonAtIndex : Int -> Model -> Model
 removePersonAtIndex pIndex model =
     let
+        state_ =
+            model.state
+
         persons =
-            model.persons
+            state_.persons
+
+        newState =
+            { state_ | persons = (List.take pIndex persons) ++ (List.drop (pIndex + 1) persons) }
     in
-        { model | persons = (List.take pIndex persons) ++ (List.drop (pIndex + 1) persons) }
+        { model | state = newState }
 
 
 errorForPersonAtIndex : Int -> Model -> Bool
@@ -720,24 +781,37 @@ errorMessageForPersonAtIndex pIndex model =
 
 sortPersons : Model -> Model
 sortPersons model =
-    { model | persons = model.persons |> List.sortBy .name }
+    let
+        state_ =
+            model.state
+
+        newState =
+            { state_ | persons = state_.persons |> List.sortBy .name }
+    in
+        { model | state = newState }
 
 
 addNewPerson : Model -> Model
 addNewPerson model =
     let
+        state_ =
+            model.state
+
         newPerson =
             { name = "New person", roleID = RoleID "product_manager" }
 
+        newState =
+            { state_ | persons = (newPerson :: state_.persons) }
+
         newModel =
-            { model | persons = (newPerson :: model.persons) }
+            { model | state = newState }
     in
         newModel |> removeInvalidPersonAtIndex 0
 
 
 personForName : Model -> String -> Maybe Person
 personForName model name =
-    model.persons
+    model.state.persons
         |> List.filter (\p -> p.name == name)
         |> List.head
 
@@ -746,7 +820,7 @@ personNamesAvailableForCycle : CycleIndex -> Model -> List String
 personNamesAvailableForCycle cycleIdx model =
     let
         personNames =
-            model.persons |> List.map .name
+            model.state.persons |> List.map .name
 
         assignedPersonNames =
             plansForCycleIndex cycleIdx model
@@ -759,13 +833,13 @@ personNamesAvailableForCycle cycleIdx model =
 
 personsForRole : Model -> RoleID -> List Person
 personsForRole model roleID =
-    model.persons
+    model.state.persons
         |> List.filter (\p -> p.roleID == roleID)
 
 
 roleForID : RoleID -> Model -> Maybe Role
 roleForID id model =
-    model.roles
+    model.state.roles
         |> List.filter (\r -> r.id == id)
         |> List.head
 
@@ -786,17 +860,17 @@ roleReadForID id model =
 
 cycleIndexForPlanID : PlanID -> CycleIndex
 cycleIndexForPlanID planID =
-    Tuple.first planID
+    planID.cycleIndex
 
 
 projectNameForPlanID : PlanID -> ProjectName
 projectNameForPlanID planID =
-    Tuple.second planID
+    planID.projectName
 
 
 plansForCycle : CycleIndex -> Model -> List Plan
 plansForCycle cycleIdx model =
-    model.plans
+    model.state.plans
         |> List.filter (\p -> cycleIndexForPlanID p.id == cycleIdx)
 
 
@@ -827,21 +901,31 @@ addPlansFromDialog cycleIdx model =
                 let
                     newPlans =
                         selectedProjects
-                            |> List.map (\pn -> { id = ( cycleIdx, pn ), assignments = [], statusRecords = [] })
+                            |> List.map (\pn -> { id = (PlanID cycleIdx pn), assignments = [], statusRecords = [] })
                 in
                     model |> addPlans newPlans
 
 
 addPlans : List Plan -> Model -> Model
 addPlans plans model =
-    { model | plans = model.plans ++ plans }
+    let
+        state_ =
+            model.state
+
+        newState =
+            { state_ | plans = state_.plans ++ plans }
+    in
+        { model | state = newState }
 
 
 updatePlan : Plan -> Model -> Model
 updatePlan newPlan model =
     let
+        state_ =
+            model.state
+
         newPlans =
-            model.plans
+            state_.plans
                 |> List.map
                     (\p ->
                         if (samePlans p newPlan) then
@@ -849,19 +933,22 @@ updatePlan newPlan model =
                         else
                             p
                     )
+
+        newState =
+            { state_ | plans = newPlans }
     in
-        { model | plans = newPlans }
+        { model | state = newState }
 
 
 plansForCycleIndex : CycleIndex -> Model -> List Plan
 plansForCycleIndex cycleIdx model =
-    model.plans
+    model.state.plans
         |> List.filter (\p -> cycleIndexForPlanID p.id == cycleIdx)
 
 
 planForID : PlanID -> Model -> Maybe Plan
 planForID planID model =
-    model.plans
+    model.state.plans
         |> List.filter (\p -> p.id == planID)
         |> List.head
 
@@ -877,7 +964,14 @@ samePlans planA planB =
 
 addProject : Project -> Model -> Model
 addProject project model =
-    { model | projects = (project :: model.projects) }
+    let
+        state_ =
+            model.state
+
+        newState =
+            { state_ | projects = (project :: state_.projects) }
+    in
+        { model | state = newState }
 
 
 projectNameToString : ProjectName -> String
@@ -889,7 +983,7 @@ projectNameToString projectNameStr =
 
 projectForName : Model -> ProjectName -> Maybe Project
 projectForName model projectName =
-    model.projects
+    model.state.projects
         |> List.filter (\p -> p.name == projectName)
         |> List.head
 
@@ -914,7 +1008,7 @@ updateAssignmentsFromDialog planID roleID model =
             Just plan ->
                 let
                     allPersonNames =
-                        model.persons |> List.map .name
+                        model.state.persons |> List.map .name
 
                     rolePersonNames =
                         personsForRole model roleID |> List.map .name
@@ -961,7 +1055,7 @@ personsAssignedForPlan model planID =
 
 personsAssignedForCycle : Model -> CycleIndex -> List Person
 personsAssignedForCycle model cycleIdx =
-    model.plans
+    model.state.plans
         |> List.filter (\p -> cycleIndexForPlanID p.id == cycleIdx)
         |> List.map .id
         |> List.concatMap (personsAssignedForPlan model)
@@ -973,7 +1067,7 @@ personsNotAssignedForCycle model cycleIdx =
         assignedPersons =
             personsAssignedForCycle model cycleIdx
     in
-        model.persons
+        model.state.persons
             |> List.filter (\p -> not (List.member p assignedPersons))
 
 
@@ -1022,7 +1116,7 @@ statusReadForID id model =
 
 statusForID : StatusID -> Model -> Maybe Status
 statusForID id model =
-    model.statuses
+    model.state.statuses
         |> List.filter (\s -> s.id == id)
         |> List.head
 
@@ -1167,7 +1261,7 @@ update_UI_Dialog_AddPlans_ToggleAll : Model -> Model
 update_UI_Dialog_AddPlans_ToggleAll model =
     let
         allProjectNames =
-            model.projects
+            model.state.projects
                 |> List.map (.name >> projectNameToString)
                 |> Set.fromList
 
@@ -1194,7 +1288,7 @@ update_UI_Dialog_AddPlans_Toggle projectNameStr model =
 
 areDialogAddPlansAllSelected : Model -> Bool
 areDialogAddPlansAllSelected model =
-    Set.size model.ui.dialog.addPlans_Projects_SelectedProjectNames == List.length model.projects
+    Set.size model.ui.dialog.addPlans_Projects_SelectedProjectNames == List.length model.state.projects
 
 
 
@@ -1422,7 +1516,7 @@ cyclesTab model =
 cycleColumns : Model -> Html Msg
 cycleColumns model =
     div [ cs "cycles" ]
-        (model.cycles
+        (model.state.cycles
             |> List.reverse
             |> List.map (cycleColumn model)
         )
@@ -1531,7 +1625,7 @@ cycleColumnPlanCard model i plan =
                             [ assignmentsBox
                                 [ 120, cycleIndexToInt cycleIdx, i ]
                                 model
-                                (Just (EditAssignments ( cycleIdx, project.name )))
+                                (Just (EditAssignments (PlanID cycleIdx project.name)))
                                 plan.assignments
                                 "Assigned: "
                             , Button.render Mdl
@@ -1590,7 +1684,7 @@ assignmentsBox keyPrefix model buttonAction assignments tooltipTextPrefix =
                     ]
     in
         div []
-            (model.roles
+            (model.state.roles
                 |> List.indexedMap
                     (\i role ->
                         let
@@ -1622,7 +1716,7 @@ projectsTab model =
             ]
             [ text "Add project" ]
         , div [ cs "projects" ]
-            [ model.projects
+            [ model.state.projects
                 |> List.indexedMap (projectCard model)
                 |> Grid.grid []
             ]
@@ -1691,7 +1785,7 @@ personsTable model =
                 , Select.ripple
                 , Select.value <| roleReadForID person.roleID model
                 ]
-                (model.roles
+                (model.state.roles
                     |> List.map .id
                     |> List.map
                         (\roleID ->
@@ -1735,7 +1829,7 @@ personsTable model =
                 ]
     in
         List.ul [ cs "persons" ]
-            (model.persons
+            (model.state.persons
                 |> List.indexedMap personRow
             )
 
@@ -1843,7 +1937,7 @@ dialogAddPlan cycle model =
 
         addableProjectNameStrings : List String
         addableProjectNameStrings =
-            model.projects
+            model.state.projects
                 |> List.map .name
                 |> List.filter (\pn -> not (List.member pn (plannedProjectNamesForCycle cycle.index model)))
                 |> List.map projectNameToString
@@ -2035,7 +2129,7 @@ view_Dialog_AddStatusRecord planID model =
                 , Select.ripple
                 , Select.value <| statusReadForID model.ui.dialog.addStatusRecord_Status_SelectedID model
                 ]
-                (model.statuses
+                (model.state.statuses
                     |> List.map .id
                     |> List.map
                         (\statusID ->
@@ -2134,6 +2228,99 @@ isTextfieldFocused key model =
 
         Just tf ->
             tf.isFocused
+
+
+
+-- COMMANDS
+
+
+stateDecoder : Json.Decode.Decoder State
+stateDecoder =
+    Json.Decode.map6 State
+        (Json.Decode.list roleDecoder)
+        (Json.Decode.list statusDecoder)
+        (Json.Decode.list cycleDecoder)
+        (Json.Decode.list personDecoder)
+        (Json.Decode.list planDecoder)
+        (Json.Decode.list projectDecoder)
+
+
+roleDecoder : Json.Decode.Decoder Role
+roleDecoder =
+    Json.Decode.map3 Role
+        (Json.Decode.field "id" (Json.Decode.map RoleID Json.Decode.string))
+        (Json.Decode.field "read" Json.Decode.string)
+        (Json.Decode.field "icon" Json.Decode.string)
+
+
+statusDecoder : Json.Decode.Decoder Status
+statusDecoder =
+    Json.Decode.map3 Status
+        (Json.Decode.field "id" (Json.Decode.map StatusID Json.Decode.string))
+        (Json.Decode.field "read" Json.Decode.string)
+        (Json.Decode.field "icon" Json.Decode.string)
+
+
+cycleDecoder : Json.Decode.Decoder Cycle
+cycleDecoder =
+    Json.Decode.map Cycle
+        (Json.Decode.field "index" (Json.Decode.map CycleIndex Json.Decode.int))
+
+
+personDecoder : Json.Decode.Decoder Person
+personDecoder =
+    Json.Decode.map2 Person
+        (Json.Decode.field "name" Json.Decode.string)
+        (Json.Decode.field "roleID" (Json.Decode.map RoleID Json.Decode.string))
+
+
+planDecoder : Json.Decode.Decoder Plan
+planDecoder =
+    Json.Decode.map3 Plan
+        (Json.Decode.field "id" planIDDecoder)
+        (Json.Decode.field "assignments" (Json.Decode.list assignmentDecoder))
+        (Json.Decode.field "statusRecords" (Json.Decode.list statusRecordDecoder))
+
+
+assignmentDecoder : Json.Decode.Decoder Assignment
+assignmentDecoder =
+    Json.Decode.map Assignment
+        (Json.Decode.field "personName" Json.Decode.string)
+
+
+statusRecordDecoder : Json.Decode.Decoder StatusRecord
+statusRecordDecoder =
+    Json.Decode.map3 StatusRecord
+        (Json.Decode.field "id" (Json.Decode.map StatusID Json.Decode.string))
+        (Json.Decode.field "description" Json.Decode.string)
+        (Json.Decode.field "date" Json.Decode.Extra.date)
+
+
+planIDDecoder : Json.Decode.Decoder PlanID
+planIDDecoder =
+    Json.Decode.map2 PlanID
+        (Json.Decode.field "cycleIndex" (Json.Decode.map CycleIndex Json.Decode.int))
+        (Json.Decode.field "projectName" (Json.Decode.map ProjectName Json.Decode.string))
+
+
+projectDecoder : Json.Decode.Decoder Project
+projectDecoder =
+    Json.Decode.map Project
+        (Json.Decode.field "name" (Json.Decode.map ProjectName Json.Decode.string))
+
+
+resourceUrl : String
+resourceUrl =
+    "localhost:8081"
+
+
+fetchLatestState : Cmd Msg
+fetchLatestState =
+    let
+        request =
+            Http.get resourceUrl stateDecoder
+    in
+        Http.send FetchLatestStateDone request
 
 
 
