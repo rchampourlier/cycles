@@ -9,10 +9,7 @@ import Html.Attributes as A exposing (class, href)
 import Http
 import Json.Decode
 import Json.Decode.Extra
-
-
---import Json.Encode
-
+import Json.Encode
 import List as L
 import Material
 import Material.Button as Button
@@ -98,6 +95,13 @@ type ProjectName
     = ProjectName String
 
 
+projectNameToString : ProjectName -> String
+projectNameToString pn =
+    case pn of
+        ProjectName n ->
+            n
+
+
 
 -- MODEL:PLAN
 
@@ -140,6 +144,13 @@ type RoleID
     = RoleID String
 
 
+roleIDToString : RoleID -> String
+roleIDToString roleID =
+    case roleID of
+        RoleID rid ->
+            rid
+
+
 
 -- MODEL:ASSIGNMENT
 
@@ -154,7 +165,8 @@ type alias Assignment =
 
 
 type alias StatusRecord =
-    { id : StatusID
+    -- TODO: `id` should be `statusID`
+    { statusID : StatusID
     , description : String
     , date : Date
     }
@@ -162,6 +174,13 @@ type alias StatusRecord =
 
 type StatusID
     = StatusID String
+
+
+statusIDToString : StatusID -> String
+statusIDToString statusID =
+    case statusID of
+        StatusID sid ->
+            sid
 
 
 type alias Status =
@@ -270,8 +289,8 @@ defaultUIDialogModel =
     }
 
 
-dateAsString : Maybe Date -> String
-dateAsString maybeDate =
+maybeDateAsString : Maybe Date -> String
+maybeDateAsString maybeDate =
     case maybeDate of
         Nothing ->
             ""
@@ -324,7 +343,7 @@ defaultModelForDev =
         statusRecords =
             case defaultDate of
                 Ok date ->
-                    [ { id = StatusID "on-track", description = "Milestone #1 delivered 1 day earlier than expected", date = date } ]
+                    [ { statusID = StatusID "on-track", description = "Milestone #1 delivered 1 day earlier than expected", date = date } ]
 
                 Err _ ->
                     []
@@ -374,31 +393,33 @@ nextIndex model =
 -- UPDATE
 
 
-type Msg
-    = SetDate Date
-      -- cycles
-    | CreateCycle
-      -- projects
+type
+    Msg
+    -- CYCLES
+    = CreateCycle
+      -- PROJECTS
     | AddProject
     | CreateProjectFromDialog
-      -- persons
+      -- PERSONS
     | AddNewPerson
     | UpdatePersonName Int String -- personIndex newValue
     | LeavePersonNameEdition Int -- personIndex
     | UpdatePersonRole Int RoleID -- personIndex...
     | DeletePerson Int -- personIndex
-      -- plan
+      -- PLANS
     | AddPlans CycleIndex
     | AddPlansFromDialog CycleIndex
-      -- assignments
+      -- ASSIGNMENTS
     | EditAssignments PlanID RoleID
     | UpdateAssignmentsFromDialog PlanID RoleID
-      -- status records
+      -- STATUS_RECORDS
     | AddStatusRecord PlanID
     | CreateStatusRecordFromDialog PlanID
-      -- commands
+      -- COMMANDS
+    | SetDate Date
     | FetchLatestStateDone (Result Http.Error State)
-      -- ui
+    | StoreStateDone (Result Http.Error ())
+      -- UI
     | UI_SelectTab Int
     | UI_Dialog_AddProjectUpdateFieldName String
     | UI_Dialog_AddPlans_ToggleAll
@@ -410,7 +431,7 @@ type Msg
     | UI_Dialog_AddStatusRecord_UpdateDate PlanID String
     | UI_Dialog_AddStatusRecord_UpdateDescription PlanID String
     | UI_Dialog_Reset
-      -- mdl
+      -- MDL
     | Mdl (Material.Msg Msg)
 
 
@@ -461,15 +482,7 @@ update msg model =
             model.ui
     in
         case msg of
-            -- Tasks
-            SetDate date ->
-                let
-                    ui_ =
-                        model.ui
-                in
-                    ( { model | ui = defaultUIModel (Just date) }, Cmd.none )
-
-            -- Events
+            -- EVENTS
             CreateCycle ->
                 let
                     state_ =
@@ -484,7 +497,7 @@ update msg model =
                     newState =
                         { state_ | cycles = newCycles }
                 in
-                    ( { model | state = newState }, Cmd.none )
+                    ( { model | state = newState }, storeState model )
 
             -- PROJECTS
             AddProject ->
@@ -498,18 +511,18 @@ update msg model =
                     ( model
                         |> addProject newProject
                         |> update_UI_Dialog_Reset
-                    , Cmd.none
+                    , storeState model
                     )
 
             -- PERSONS
             AddNewPerson ->
                 ( model
                     |> addNewPerson
-                , Cmd.none
+                , storeState model
                 )
 
             UpdatePersonName personIndex newName ->
-                ( model |> updatePersonName personIndex newName, Cmd.none )
+                ( model |> updatePersonName personIndex newName, storeState model )
 
             LeavePersonNameEdition personIndex ->
                 let
@@ -518,13 +531,13 @@ update msg model =
                             |> removeInvalidPersonAtIndex personIndex
                             |> sortPersons
                 in
-                    ( newModel, Cmd.none )
+                    ( newModel, storeState model )
 
             UpdatePersonRole personIndex newRoleId ->
-                ( model |> updatePersonRole personIndex newRoleId, Cmd.none )
+                ( model |> updatePersonRole personIndex newRoleId, storeState model )
 
             DeletePerson pIndex ->
-                ( model |> removePersonAtIndex pIndex, Cmd.none )
+                ( model |> removePersonAtIndex pIndex, storeState model )
 
             -- PLANS
             AddPlans cycleIdx ->
@@ -534,7 +547,7 @@ update msg model =
                 ( model
                     |> addPlansFromDialog cycleIdx
                     |> update_UI_Dialog_Reset
-                , Cmd.none
+                , storeState model
                 )
 
             -- ASSIGNMENTS
@@ -545,7 +558,7 @@ update msg model =
                 ( model
                     |> updateAssignmentsFromDialog planID roleID
                     |> update_UI_Dialog_Reset
-                , Cmd.none
+                , storeState model
                 )
 
             -- STATUS RECORD
@@ -556,13 +569,34 @@ update msg model =
                 ( model
                     |> updateStatusRecordsFromDialog planID
                     |> update_UI_Dialog_Reset
-                , Cmd.none
+                , storeState model
                 )
 
             -- COMMANDS
-            FetchLatestStateDone res ->
-                -- TODO
-                ( model, Cmd.none )
+            SetDate date ->
+                let
+                    ui_ =
+                        model.ui
+                in
+                    ( { model | ui = defaultUIModel (Just date) }, Cmd.none )
+
+            FetchLatestStateDone result ->
+                -- TODO: display a message indicating success/error
+                case result of
+                    Result.Ok newState ->
+                        ( { model | state = newState }, Cmd.none )
+
+                    Result.Err _ ->
+                        ( model, Cmd.none )
+
+            StoreStateDone result ->
+                -- TODO: display a message indicating success/error
+                case result of
+                    Result.Ok () ->
+                        ( model, Cmd.none )
+
+                    Result.Err _ ->
+                        ( model, Cmd.none )
 
             -- UI
             UI_SelectTab k ->
@@ -974,13 +1008,6 @@ addProject project model =
         { model | state = newState }
 
 
-projectNameToString : ProjectName -> String
-projectNameToString projectNameStr =
-    case projectNameStr of
-        ProjectName s ->
-            s
-
-
 projectForName : Model -> ProjectName -> Maybe Project
 projectForName model projectName =
     model.state.projects
@@ -1085,7 +1112,7 @@ updateStatusRecordsFromDialog planID model =
             model.ui.dialog.addStatusRecord_ParsedDate
 
         newStatusRecord date =
-            { id = model.ui.dialog.addStatusRecord_Status_SelectedID
+            { statusID = model.ui.dialog.addStatusRecord_Status_SelectedID
             , date = date
             , description = model.ui.dialog.addStatusRecord_DescriptionField_Value
             }
@@ -1199,7 +1226,7 @@ prepareForDialogAddStatusRecord planID date model =
         newDialog =
             { dialog_
                 | kind = DialogAddStatusRecord planID
-                , addStatusRecord_DateField_Value = dateAsString (Just date)
+                , addStatusRecord_DateField_Value = maybeDateAsString (Just date)
                 , addStatusRecord_ParsedDate = Ok date
             }
     in
@@ -2232,6 +2259,27 @@ isTextfieldFocused key model =
 
 
 -- COMMANDS
+-- COMMANDS:SET_DATE
+
+
+setDate : Cmd Msg
+setDate =
+    Task.perform SetDate Date.now
+
+
+
+-- COMMANDS:FETCH_LATEST_STATE
+
+
+fetchLatestState : Cmd Msg
+fetchLatestState =
+    Http.get getLatestStateUrl fetchLatestStatePayloadDecoder
+        |> Http.send FetchLatestStateDone
+
+
+fetchLatestStatePayloadDecoder : Json.Decode.Decoder State
+fetchLatestStatePayloadDecoder =
+    Json.Decode.field "state" stateDecoder
 
 
 stateDecoder : Json.Decode.Decoder State
@@ -2309,18 +2357,125 @@ projectDecoder =
         (Json.Decode.field "name" (Json.Decode.map ProjectName Json.Decode.string))
 
 
-resourceUrl : String
-resourceUrl =
-    "localhost:8081"
+getLatestStateUrl : String
+getLatestStateUrl =
+    "http://localhost:8081/states/latest"
 
 
-fetchLatestState : Cmd Msg
-fetchLatestState =
+
+-- COMMANDS:STORE_STATE
+
+
+storeState : Model -> Cmd Msg
+storeState model =
     let
-        request =
-            Http.get resourceUrl stateDecoder
+        payloadJson =
+            Json.Encode.object
+                [ ( "state", model.state |> stateEncoder ) ]
+
+        body =
+            Http.stringBody "application/json" (Json.Encode.encode 0 payloadJson)
     in
-        Http.send FetchLatestStateDone request
+        Http.toTask (createRequest storeStateUrl body)
+            |> Task.attempt StoreStateDone
+
+
+storeStateUrl : String
+storeStateUrl =
+    "http://localhost:8081/states/"
+
+
+stateEncoder : State -> Json.Encode.Value
+stateEncoder state =
+    Json.Encode.object
+        [ ( "roles", Json.Encode.list <| List.map roleEncoder state.roles )
+        , ( "statuses", Json.Encode.list <| List.map statusEncoder state.statuses )
+        , ( "cycles", Json.Encode.list <| List.map cycleEncoder state.cycles )
+        , ( "persons", Json.Encode.list <| List.map personEncoder state.persons )
+        , ( "plans", Json.Encode.list <| List.map planEncoder state.plans )
+        , ( "projects", Json.Encode.list <| List.map projectEncoder state.projects )
+        ]
+
+
+roleEncoder : Role -> Json.Encode.Value
+roleEncoder role =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string <| roleIDToString role.id )
+        , ( "read", Json.Encode.string role.read )
+        , ( "icon", Json.Encode.string role.icon )
+        ]
+
+
+statusEncoder : Status -> Json.Encode.Value
+statusEncoder status =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string <| statusIDToString status.id )
+        , ( "read", Json.Encode.string status.read )
+        , ( "icon", Json.Encode.string status.icon )
+        ]
+
+
+cycleEncoder : Cycle -> Json.Encode.Value
+cycleEncoder cycle =
+    Json.Encode.object
+        [ ( "index", Json.Encode.int <| cycleIndexToInt cycle.index ) ]
+
+
+personEncoder : Person -> Json.Encode.Value
+personEncoder person =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string person.name ) ]
+
+
+planEncoder : Plan -> Json.Encode.Value
+planEncoder plan =
+    Json.Encode.object
+        [ ( "id", planIDEncoder plan.id )
+        , ( "assignments", Json.Encode.list <| List.map assignmentEncoder plan.assignments )
+        , ( "statusRecords", Json.Encode.list <| List.map statusRecordEncoder plan.statusRecords )
+        ]
+
+
+planIDEncoder : PlanID -> Json.Encode.Value
+planIDEncoder { cycleIndex, projectName } =
+    Json.Encode.object
+        [ ( "cycleIndex", Json.Encode.int (cycleIndexToInt cycleIndex) )
+        , ( "projectName", Json.Encode.string (projectNameToString projectName) )
+        ]
+
+
+assignmentEncoder : Assignment -> Json.Encode.Value
+assignmentEncoder assignment =
+    Json.Encode.object
+        [ ( "personName", Json.Encode.string assignment.personName ) ]
+
+
+statusRecordEncoder : StatusRecord -> Json.Encode.Value
+statusRecordEncoder statusRecord =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string <| statusIDToString statusRecord.statusID )
+        , ( "description", Json.Encode.string statusRecord.description )
+        , ( "date", Json.Encode.string (maybeDateAsString (Just statusRecord.date)) )
+        ]
+
+
+projectEncoder : Project -> Json.Encode.Value
+projectEncoder { name } =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string (projectNameToString name) ) ]
+
+
+createRequest : String -> Http.Body -> Http.Request ()
+createRequest url body =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Content-Type" "application/json" ]
+        , url = url
+        , body = body
+        , expect = Http.expectStringResponse (\_ -> Ok ())
+        , timeout = Nothing
+        , withCredentials = False
+        }
 
 
 
@@ -2335,7 +2490,7 @@ initModel =
 main : Program Never Model Msg
 main =
     Html.program
-        { init = ( initModel, Task.perform SetDate Date.now )
+        { init = ( initModel, Cmd.batch [ setDate, fetchLatestState ] )
         , view = view
         , update = update
         , subscriptions = Material.subscriptions Mdl
