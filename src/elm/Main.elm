@@ -5,7 +5,7 @@ import Date exposing (Date)
 import Date.Extra as Date
 import Dict exposing (Dict)
 import Html exposing (Html, text)
-import Html.Attributes as A exposing (class, href)
+import Html.Attributes exposing (class, href)
 import Http
 import Json.Decode
 import Json.Decode.Extra
@@ -49,6 +49,7 @@ type alias Model =
     { state : State
     , mdl : Material.Model
     , ui : UIModel
+    , lastError : Maybe String
     }
 
 
@@ -254,6 +255,7 @@ defaultModel =
     { state = defaultState
     , mdl = Material.model
     , ui = defaultUIModel Nothing
+    , lastError = Nothing
     }
 
 
@@ -370,6 +372,7 @@ defaultModelForDev =
         { state = state
         , mdl = Material.model
         , ui = defaultUIModel defaultMaybeDate
+        , lastError = Nothing
         }
 
 
@@ -490,14 +493,8 @@ update msg model =
 
                     newCycle =
                         { index = nextIndex model }
-
-                    newCycles =
-                        newCycle :: model.state.cycles
-
-                    newState =
-                        { state_ | cycles = newCycles }
                 in
-                    ( { model | state = newState }, storeState model )
+                    updateModel { model | state = { state_ | cycles = newCycle :: state_.cycles } }
 
             -- PROJECTS
             AddProject ->
@@ -508,69 +505,68 @@ update msg model =
                     newProject =
                         { name = ProjectName model.ui.dialog.addProject_ProjectNameField_Value }
                 in
-                    ( model
+                    model
                         |> addProject newProject
                         |> update_UI_Dialog_Reset
-                    , storeState model
-                    )
+                        |> updateModel
 
             -- PERSONS
             AddNewPerson ->
-                ( model
+                model
                     |> addNewPerson
-                , storeState model
-                )
+                    |> updateModel
 
             UpdatePersonName personIndex newName ->
-                ( model |> updatePersonName personIndex newName, storeState model )
+                model
+                    |> updatePersonName personIndex newName
+                    |> updateModel
 
             LeavePersonNameEdition personIndex ->
-                let
-                    newModel =
-                        model
-                            |> removeInvalidPersonAtIndex personIndex
-                            |> sortPersons
-                in
-                    ( newModel, storeState model )
+                model
+                    |> removeInvalidPersonAtIndex personIndex
+                    |> sortPersons
+                    |> updateModel
 
             UpdatePersonRole personIndex newRoleId ->
-                ( model |> updatePersonRole personIndex newRoleId, storeState model )
+                model
+                    |> updatePersonRole personIndex newRoleId
+                    |> updateModel
 
             DeletePerson pIndex ->
-                ( model |> removePersonAtIndex pIndex, storeState model )
+                model
+                    |> removePersonAtIndex pIndex
+                    |> updateModel
 
             -- PLANS
             AddPlans cycleIdx ->
                 model |> prepareForDialog (DialogAddPlans cycleIdx)
 
             AddPlansFromDialog cycleIdx ->
-                ( model
+                model
                     |> addPlansFromDialog cycleIdx
                     |> update_UI_Dialog_Reset
-                , storeState model
-                )
+                    |> updateModel
 
             -- ASSIGNMENTS
             EditAssignments planID roleID ->
-                model |> prepareForDialog (DialogEditAssignments planID roleID)
+                model
+                    |> prepareForDialog (DialogEditAssignments planID roleID)
 
             UpdateAssignmentsFromDialog planID roleID ->
-                ( model
+                model
                     |> updateAssignmentsFromDialog planID roleID
                     |> update_UI_Dialog_Reset
-                , storeState model
-                )
+                    |> updateModel
 
             -- STATUS RECORD
             AddStatusRecord planID ->
                 ( model, Task.perform (UI_Dialog_AddStatusRecord_PrepareAndOpen planID) Date.now )
 
             CreateStatusRecordFromDialog planID ->
-                ( model
+                model
                     |> updateStatusRecordsFromDialog planID
                     |> update_UI_Dialog_Reset
-                , storeState model
-                )
+                    |> updateModel
 
             -- COMMANDS
             SetDate date ->
@@ -581,22 +577,20 @@ update msg model =
                     ( { model | ui = defaultUIModel (Just date) }, Cmd.none )
 
             FetchLatestStateDone result ->
-                -- TODO: display a message indicating success/error
                 case result of
                     Result.Ok newState ->
                         ( { model | state = newState }, Cmd.none )
 
-                    Result.Err _ ->
-                        ( model, Cmd.none )
+                    Result.Err error ->
+                        ( { model | lastError = Just (httpErrorToString error) }, Cmd.none )
 
             StoreStateDone result ->
-                -- TODO: display a message indicating success/error
                 case result of
                     Result.Ok () ->
                         ( model, Cmd.none )
 
-                    Result.Err _ ->
-                        ( model, Cmd.none )
+                    Result.Err error ->
+                        ( { model | lastError = Just (httpErrorToString error) }, Cmd.none )
 
             -- UI
             UI_SelectTab k ->
@@ -638,6 +632,17 @@ update msg model =
 
             Mdl msg_ ->
                 Material.update Mdl msg_ model
+
+
+
+{- Helper to be used in `update` to return the new model and
+   the command to perform the `StoreState` command.
+-}
+
+
+updateModel : Model -> ( Model, Cmd Msg )
+updateModel model =
+    ( model, storeState model.state )
 
 
 
@@ -1455,7 +1460,20 @@ update_UI_Dialog_AddStatusRecord_Description newDescription model =
 
 view : Model -> Html Msg
 view model =
-    Html.div [ A.id "app" ] [ layout model ]
+    let
+        errorBox =
+            case model.lastError of
+                Nothing ->
+                    div [] []
+
+                Just errorMsg ->
+                    Html.div
+                        [ Html.Attributes.id "app-last-error" ]
+                        [ text <| Maybe.withDefault "" model.lastError ]
+    in
+        Html.div
+            [ Html.Attributes.id "app" ]
+            [ layout model, errorBox ]
 
 
 layout : Model -> Html Msg
@@ -2285,12 +2303,12 @@ fetchLatestStatePayloadDecoder =
 stateDecoder : Json.Decode.Decoder State
 stateDecoder =
     Json.Decode.map6 State
-        (Json.Decode.list roleDecoder)
-        (Json.Decode.list statusDecoder)
-        (Json.Decode.list cycleDecoder)
-        (Json.Decode.list personDecoder)
-        (Json.Decode.list planDecoder)
-        (Json.Decode.list projectDecoder)
+        (Json.Decode.field "roles" (Json.Decode.list roleDecoder))
+        (Json.Decode.field "statuses" (Json.Decode.list statusDecoder))
+        (Json.Decode.field "cycles" (Json.Decode.list cycleDecoder))
+        (Json.Decode.field "persons" (Json.Decode.list personDecoder))
+        (Json.Decode.field "plans" (Json.Decode.list planDecoder))
+        (Json.Decode.field "projects" (Json.Decode.list projectDecoder))
 
 
 roleDecoder : Json.Decode.Decoder Role
@@ -2366,12 +2384,12 @@ getLatestStateUrl =
 -- COMMANDS:STORE_STATE
 
 
-storeState : Model -> Cmd Msg
-storeState model =
+storeState : State -> Cmd Msg
+storeState state =
     let
         payloadJson =
             Json.Encode.object
-                [ ( "state", model.state |> stateEncoder ) ]
+                [ ( "state", state |> stateEncoder ) ]
 
         body =
             Http.stringBody "application/json" (Json.Encode.encode 0 payloadJson)
@@ -2424,7 +2442,9 @@ cycleEncoder cycle =
 personEncoder : Person -> Json.Encode.Value
 personEncoder person =
     Json.Encode.object
-        [ ( "name", Json.Encode.string person.name ) ]
+        [ ( "name", Json.Encode.string person.name )
+        , ( "roleID", Json.Encode.string (roleIDToString person.roleID) )
+        ]
 
 
 planEncoder : Plan -> Json.Encode.Value
@@ -2476,6 +2496,29 @@ createRequest url body =
         , timeout = Nothing
         , withCredentials = False
         }
+
+
+
+-- UTILS
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString error =
+    case error of
+        Http.BadUrl msg ->
+            "BadUrl: " ++ msg
+
+        Http.Timeout ->
+            "Timeout"
+
+        Http.NetworkError ->
+            "NetworkError"
+
+        Http.BadStatus _ ->
+            "BadStatus"
+
+        Http.BadPayload msg _ ->
+            "BadPayload: " ++ msg
 
 
 
