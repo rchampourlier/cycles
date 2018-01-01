@@ -48,7 +48,7 @@ toggle x set =
 type alias Model =
     { state : State
     , mdl : Material.Model
-    , ui : UIModel
+    , ui : UI_Model
     , lastError : Maybe String
     }
 
@@ -195,9 +195,9 @@ type alias Status =
 -- MODEL:UI
 
 
-type alias UIModel =
+type alias UI_Model =
     { selectedTab : Int
-    , dialog : UI_DialogModel
+    , dialog : UI_Dialog_Model
     }
 
 
@@ -214,6 +214,11 @@ type alias UIModel =
 
    # 3xx serie: persons tab
      310: person row delete button
+     321: dialog -> name field
+     322: dialog -> role select
+     327: dialog -> button delete
+     328: dialog -> button create or update
+     329: dialog -> button cancel
 
    # 9xx serie: dialog
      901: cancel button
@@ -225,12 +230,23 @@ type alias UIModel =
 -}
 
 
-type alias UI_DialogModel =
-    { kind : DialogKind
+type alias UI_Dialog_Model =
+    { kind : UI_Dialog_Kind
+
+    -- PERSONS
+    , person_EditedPerson : Person
+
+    -- PROJECTS
     , addProject_ProjectNameField_Value : String
+
+    -- PLANS
     , addPlans_Projects_SelectedProjectNames : Set String -- project names as String
+
+    -- ASSIGNMENTS
     , editAssignments_Persons_PersonNameSelected : List ( String, Bool ) -- personName, isSelected
-    , addStatusRecord_Status_SelectedID : StatusID
+
+    -- STATUS_RECORDS
+    , addStatusRecord_SelectedStatusID : StatusID
     , addStatusRecord_DateField_Value : String
     , addStatusRecord_DescriptionField_Value : String
     , addStatusRecord_DescriptionField_Touched : Bool
@@ -238,52 +254,72 @@ type alias UI_DialogModel =
     }
 
 
-type DialogKind
-    = DialogNone
-    | DialogAddProject
-    | DialogAddPlans CycleIndex
-    | DialogEditAssignments PlanID RoleID
-    | DialogAddStatusRecord PlanID
+type UI_Dialog_Kind
+    = UI_Dialog_None
+      -- ASSIGNMENTS
+    | UI_Dialog_EditAssignments PlanID RoleID
+      -- PERSONS
+    | UI_Dialog_Person (Maybe Person)
+      -- PLANS
+    | UI_Dialog_AddPlans CycleIndex
+      -- PROJECTS
+    | UI_Dialog_AddProject
+      -- STATUS_RECORDS
+    | UI_Dialog_AddStatusRecord PlanID
 
 
 
 -- MODEL:DEFAULT
 
 
-defaultModel : Model
-defaultModel =
-    { state = defaultState
+initModel : Model
+initModel =
+    { state = initState
     , mdl = Material.model
-    , ui = defaultUIModel Nothing
+    , ui = init_UI_Model Nothing
     , lastError = Nothing
     }
 
 
-defaultState : State
-defaultState =
-    { roles = []
-    , statuses = []
-    , cycles = []
-    , persons = []
-    , plans = []
-    , projects = []
-    }
+initState : State
+initState =
+    let
+        roles =
+            [ { id = RoleID "product_manager", read = "Product Manager", icon = "directions" }
+            , { id = RoleID "frontend_developer", read = "Frontend Developer", icon = "palette" }
+            , { id = RoleID "backend_developer", read = "Backend Developer", icon = "settings" }
+            ]
+
+        statuses =
+            [ { id = StatusID "on-track", read = "On track", icon = "thumb_up" }
+            , { id = StatusID "at-risk", read = "At risk", icon = "warning" }
+            , { id = StatusID "critical", read = "Critical", icon = "error" }
+            ]
+    in
+        { roles = roles
+        , statuses = statuses
+        , cycles = []
+        , persons = []
+        , plans = []
+        , projects = []
+        }
 
 
-defaultUIModel : Maybe Date -> UIModel
-defaultUIModel date =
+init_UI_Model : Maybe Date -> UI_Model
+init_UI_Model date =
     { selectedTab = 0
-    , dialog = defaultUIDialogModel
+    , dialog = init_UI_Dialog_Model
     }
 
 
-defaultUIDialogModel : UI_DialogModel
-defaultUIDialogModel =
-    { kind = DialogNone
+init_UI_Dialog_Model : UI_Dialog_Model
+init_UI_Dialog_Model =
+    { kind = UI_Dialog_None
+    , person_EditedPerson = Person "New person" (RoleID "product_manager")
     , addProject_ProjectNameField_Value = ""
     , addPlans_Projects_SelectedProjectNames = Set.empty
     , editAssignments_Persons_PersonNameSelected = []
-    , addStatusRecord_Status_SelectedID = StatusID "on-track"
+    , addStatusRecord_SelectedStatusID = StatusID "on-track"
     , addStatusRecord_DateField_Value = ""
     , addStatusRecord_DescriptionField_Value = "Everything's ok!"
     , addStatusRecord_DescriptionField_Touched = False
@@ -302,78 +338,6 @@ maybeDateAsString maybeDate =
                 |> List.map (\f -> f date)
                 |> List.intersperse "-"
                 |> List.foldr (++) ""
-
-
-defaultModelForDev : Model
-defaultModelForDev =
-    -- A default model to ease development
-    let
-        roles =
-            [ { id = RoleID "product_manager", read = "Product Manager", icon = "directions" }
-            , { id = RoleID "frontend_developer", read = "Frontend Developer", icon = "palette" }
-            , { id = RoleID "backend_developer", read = "Backend Developer", icon = "settings" }
-            ]
-
-        statuses =
-            [ { id = StatusID "on-track", read = "On track", icon = "thumb_up" }
-            , { id = StatusID "at-risk", read = "At risk", icon = "warning" }
-            , { id = StatusID "critical", read = "Critical", icon = "error" }
-            ]
-
-        cycles =
-            [ { index = CycleIndex 2 }
-            , { index = CycleIndex 1 }
-            ]
-
-        persons =
-            [ { name = "Raphaëlle", roleID = RoleID "product_manager" }
-            , { name = "Christophe", roleID = RoleID "product_manager" }
-            , { name = "Ludovic", roleID = RoleID "backend_developer" }
-            ]
-
-        defaultDate =
-            Date.fromString "2017-12-24"
-
-        defaultMaybeDate =
-            case defaultDate of
-                Ok date ->
-                    Just date
-
-                Err _ ->
-                    Nothing
-
-        statusRecords =
-            case defaultDate of
-                Ok date ->
-                    [ { statusID = StatusID "on-track", description = "Milestone #1 delivered 1 day earlier than expected", date = date } ]
-
-                Err _ ->
-                    []
-
-        plans =
-            [ { id = (PlanID (CycleIndex 1) (ProjectName "Company Pages #1"))
-              , assignments = [ { personName = "Raphaëlle" } ]
-              , statusRecords = statusRecords
-              }
-            ]
-
-        projects =
-            [ { name = ProjectName "Company Pages #1" }, { name = ProjectName "Event Newsletter" } ]
-
-        state =
-            { roles = roles
-            , statuses = statuses
-            , cycles = cycles
-            , persons = persons
-            , plans = plans
-            , projects = projects
-            }
-    in
-        { state = state
-        , mdl = Material.model
-        , ui = defaultUIModel defaultMaybeDate
-        , lastError = Nothing
-        }
 
 
 nextIndex : Model -> CycleIndex
@@ -398,23 +362,23 @@ nextIndex model =
 
 type
     Msg
-    -- CYCLES
-    = CreateCycle
+    -- ASSIGNMENTS
+    = EditAssignments PlanID RoleID
+    | UpdateAssignmentsFromDialog PlanID RoleID
+      -- CYCLES
+    | CreateCycle
+      -- PERSONS
+    | AddPerson
+    | CreatePersonFromDialog
+    | EditPerson Person
+    | UpdatePersonFromDialog Person
+    | DeletePersonFromDialog Person
       -- PROJECTS
     | AddProject
     | CreateProjectFromDialog
-      -- PERSONS
-    | AddNewPerson
-    | UpdatePersonName Int String -- personIndex newValue
-    | LeavePersonNameEdition Int -- personIndex
-    | UpdatePersonRole Int RoleID -- personIndex...
-    | DeletePerson Int -- personIndex
       -- PLANS
     | AddPlans CycleIndex
     | AddPlansFromDialog CycleIndex
-      -- ASSIGNMENTS
-    | EditAssignments PlanID RoleID
-    | UpdateAssignmentsFromDialog PlanID RoleID
       -- STATUS_RECORDS
     | AddStatusRecord PlanID
     | CreateStatusRecordFromDialog PlanID
@@ -424,58 +388,26 @@ type
     | StoreStateDone (Result Http.Error ())
       -- UI
     | UI_SelectTab Int
-    | UI_Dialog_AddProjectUpdateFieldName String
-    | UI_Dialog_AddPlans_ToggleAll
-    | UI_Dialog_AddPlans_Toggle String
-    | UI_Dialog_EditAssignmentsToggleAll
-    | UI_Dialog_EditAssignmentsToggle String -- personName
+      -- UI:DIALOG
+    | UI_Dialog_Reset
+      -- UI:DIALOG:PERSONS
+    | UI_Dialog_Person_UpdateName String
+    | UI_Dialog_Person_SelectRole RoleID
+      -- UI:DIALOG:PROJECTS
+    | UI_Dialog_AddProject_UpdateName String
+      -- UI:DIALOG:PLANS
+    | UI_Dialog_AddPlans_ToggleProjectByNameAllProjects
+    | UI_Dialog_AddPlans_ToggleProjectByName String
+      -- UI:DIALOG:ASSIGNMENTS
+    | UI_Dialog_EditAssignments_ToggleAllPersons
+    | UI_Dialog_EditAssignments_TogglePersonByName String -- personName
+      -- UI:DIALOG:STATUS_RECORDS
     | UI_Dialog_AddStatusRecord_PrepareAndOpen PlanID Date
     | UI_Dialog_AddStatusRecord_SelectStatus StatusID
     | UI_Dialog_AddStatusRecord_UpdateDate PlanID String
     | UI_Dialog_AddStatusRecord_UpdateDescription PlanID String
-    | UI_Dialog_Reset
       -- MDL
     | Mdl (Material.Msg Msg)
-
-
-monthAsString : Date.Month -> String
-monthAsString month =
-    case month of
-        Date.Jan ->
-            "01"
-
-        Date.Feb ->
-            "02"
-
-        Date.Mar ->
-            "03"
-
-        Date.Apr ->
-            "04"
-
-        Date.May ->
-            "05"
-
-        Date.Jun ->
-            "06"
-
-        Date.Jul ->
-            "07"
-
-        Date.Aug ->
-            "08"
-
-        Date.Sep ->
-            "09"
-
-        Date.Oct ->
-            "10"
-
-        Date.Nov ->
-            "11"
-
-        Date.Dec ->
-            "12"
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -496,9 +428,37 @@ update msg model =
                 in
                     updateModel { model | state = { state_ | cycles = newCycle :: state_.cycles } }
 
+            -- PERSONS
+            AddPerson ->
+                update_UI_Dialog_prepare (UI_Dialog_Person Nothing) model
+
+            CreatePersonFromDialog ->
+                model
+                    |> addPerson model.ui.dialog.person_EditedPerson
+                    |> sortPersons
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
+
+            EditPerson person ->
+                update_UI_Dialog_prepare (UI_Dialog_Person (Just person)) model
+
+            UpdatePersonFromDialog person ->
+                model
+                    |> deletePerson person
+                    |> addPerson model.ui.dialog.person_EditedPerson
+                    |> sortPersons
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
+
+            DeletePersonFromDialog person ->
+                model
+                    |> deletePerson person
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
+
             -- PROJECTS
             AddProject ->
-                prepareForDialog DialogAddProject model
+                update_UI_Dialog_prepare UI_Dialog_AddProject model
 
             CreateProjectFromDialog ->
                 let
@@ -510,36 +470,9 @@ update msg model =
                         |> update_UI_Dialog_Reset
                         |> updateModel
 
-            -- PERSONS
-            AddNewPerson ->
-                model
-                    |> addNewPerson
-                    |> updateModel
-
-            UpdatePersonName personIndex newName ->
-                model
-                    |> updatePersonName personIndex newName
-                    |> updateModel
-
-            LeavePersonNameEdition personIndex ->
-                model
-                    |> removeInvalidPersonAtIndex personIndex
-                    |> sortPersons
-                    |> updateModel
-
-            UpdatePersonRole personIndex newRoleId ->
-                model
-                    |> updatePersonRole personIndex newRoleId
-                    |> updateModel
-
-            DeletePerson pIndex ->
-                model
-                    |> removePersonAtIndex pIndex
-                    |> updateModel
-
             -- PLANS
             AddPlans cycleIdx ->
-                model |> prepareForDialog (DialogAddPlans cycleIdx)
+                model |> update_UI_Dialog_prepare (UI_Dialog_AddPlans cycleIdx)
 
             AddPlansFromDialog cycleIdx ->
                 model
@@ -550,7 +483,7 @@ update msg model =
             -- ASSIGNMENTS
             EditAssignments planID roleID ->
                 model
-                    |> prepareForDialog (DialogEditAssignments planID roleID)
+                    |> update_UI_Dialog_prepare (UI_Dialog_EditAssignments planID roleID)
 
             UpdateAssignmentsFromDialog planID roleID ->
                 model
@@ -574,7 +507,7 @@ update msg model =
                     ui_ =
                         model.ui
                 in
-                    ( { model | ui = defaultUIModel (Just date) }, Cmd.none )
+                    ( { model | ui = init_UI_Model (Just date) }, Cmd.none )
 
             FetchLatestStateDone result ->
                 case result of
@@ -596,27 +529,38 @@ update msg model =
             UI_SelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
 
-            UI_Dialog_AddProjectUpdateFieldName name ->
-                let
-                    dialog_ =
-                        model.ui.dialog
-                in
-                    ( model |> update_UI_Dialog { dialog_ | addProject_ProjectNameField_Value = name }, Cmd.none )
+            -- UI:DIALOG
+            UI_Dialog_Reset ->
+                ( model |> update_UI_Dialog_Reset, Cmd.none )
 
-            UI_Dialog_AddPlans_ToggleAll ->
-                ( model |> update_UI_Dialog_AddPlans_ToggleAll, Cmd.none )
+            -- UI:DIALOG:PERSONS
+            UI_Dialog_Person_UpdateName newNameStr ->
+                ( model |> update_UI_Dialog_Person_UpdateName newNameStr, Cmd.none )
 
-            UI_Dialog_AddPlans_Toggle projectNameStr ->
-                ( model |> update_UI_Dialog_AddPlans_Toggle projectNameStr, Cmd.none )
+            UI_Dialog_Person_SelectRole newRoleID ->
+                ( model |> update_UI_Dialog_Person_SelectRole newRoleID, Cmd.none )
 
-            UI_Dialog_EditAssignmentsToggleAll ->
-                ( model |> update_UI_Dialog_EditAssignmentsToggleAll, Cmd.none )
+            -- UI:DIALOG:PLANS
+            UI_Dialog_AddPlans_ToggleProjectByNameAllProjects ->
+                ( model |> update_UI_Dialog_AddPlans_ToggleProjectByNameAllProjects, Cmd.none )
 
-            UI_Dialog_EditAssignmentsToggle personName ->
-                ( model |> update_UI_Dialog_EditAssignmentsToggle personName, Cmd.none )
+            UI_Dialog_AddPlans_ToggleProjectByName projectNameStr ->
+                ( model |> update_UI_Dialog_AddPlans_ToggleProjectByName projectNameStr, Cmd.none )
 
+            -- UI:DIALOG:PROJECTS
+            UI_Dialog_AddProject_UpdateName nameStr ->
+                ( model |> update_UI_Dialog_AddProject_UpdateName nameStr, Cmd.none )
+
+            -- UI:DIALOG:ASSIGNMENTS
+            UI_Dialog_EditAssignments_ToggleAllPersons ->
+                ( model |> update_UI_Dialog_EditAssignments_ToggleAllPersons, Cmd.none )
+
+            UI_Dialog_EditAssignments_TogglePersonByName personName ->
+                ( model |> update_UI_Dialog_EditAssignments_TogglePersonByName personName, Cmd.none )
+
+            -- UI:DIALOG:STATUS_RECORDS
             UI_Dialog_AddStatusRecord_PrepareAndOpen planID date ->
-                prepareForDialogAddStatusRecord planID date model
+                update_UI_Dialog_prepare_AddStatusRecord planID date model
 
             UI_Dialog_AddStatusRecord_SelectStatus newStatusID ->
                 ( model |> update_UI_Dialog_AddStatusRecord_SelectedStatusID newStatusID, Cmd.none )
@@ -627,22 +571,21 @@ update msg model =
             UI_Dialog_AddStatusRecord_UpdateDescription planID newDescription ->
                 ( model |> update_UI_Dialog_AddStatusRecord_Description newDescription, Cmd.none )
 
-            UI_Dialog_Reset ->
-                ( model |> update_UI_Dialog_Reset, Cmd.none )
-
             Mdl msg_ ->
                 Material.update Mdl msg_ model
 
 
-
-{- Helper to be used in `update` to return the new model and
-   the command to perform the `StoreState` command.
--}
-
-
 updateModel : Model -> ( Model, Cmd Msg )
 updateModel model =
+    {- Helper to be used in `update` to return the new model and
+       the command to perform the `StoreState` command.
+    -}
     ( model, storeState model.state )
+
+
+updateState : State -> Model -> Model
+updateState newState model =
+    { model | state = newState }
 
 
 
@@ -682,45 +625,14 @@ updateCycleAtIndex cycleIdx newCycle model =
 -- UPDATE:PERSONS
 
 
-updatePersonRole : Int -> RoleID -> Model -> Model
-updatePersonRole personIndex newRoleId model =
-    case roleForID newRoleId model of
-        Nothing ->
-            model
-
-        Just role ->
-            let
-                state_ =
-                    model.state
-
-                updatePerson index person =
-                    if index == personIndex then
-                        { person | roleID = role.id }
-                    else
-                        person
-
-                newState =
-                    { state_ | persons = state_.persons |> List.indexedMap updatePerson }
-            in
-                { model | state = newState }
-
-
-updatePersonName : Int -> String -> Model -> Model
-updatePersonName personIndex newName model =
+addPerson : Person -> Model -> Model
+addPerson person model =
     let
         state_ =
             model.state
-
-        updatePerson index person =
-            if index == personIndex then
-                { person | name = newName }
-            else
-                person
-
-        newState =
-            { state_ | persons = state_.persons |> List.indexedMap updatePerson }
     in
-        { model | state = newState }
+        model
+            |> updateState { state_ | persons = (person :: state_.persons) }
 
 
 isPersonNameAlreadyTakenAtIndex : Int -> Model -> Bool
@@ -768,32 +680,18 @@ personNameAtIndex pIndex model =
             Just person.name
 
 
-removeInvalidPersonAtIndex : Int -> Model -> Model
-removeInvalidPersonAtIndex pIndex model =
-    {- If the person at the specified index is invalid (duplicate or
-       empty name, removes it.
-    -}
-    let
-        personNameAtIndex_ =
-            personNameAtIndex pIndex model
-    in
-        if errorForPersonAtIndex pIndex model then
-            removePersonAtIndex pIndex model
-        else
-            model
-
-
-removePersonAtIndex : Int -> Model -> Model
-removePersonAtIndex pIndex model =
+deletePerson : Person -> Model -> Model
+deletePerson person model =
     let
         state_ =
             model.state
 
-        persons =
+        newPersons =
             state_.persons
+                |> List.filter (\p -> p.name /= person.name)
 
         newState =
-            { state_ | persons = (List.take pIndex persons) ++ (List.drop (pIndex + 1) persons) }
+            { state_ | persons = newPersons }
     in
         { model | state = newState }
 
@@ -828,24 +726,6 @@ sortPersons model =
             { state_ | persons = state_.persons |> List.sortBy .name }
     in
         { model | state = newState }
-
-
-addNewPerson : Model -> Model
-addNewPerson model =
-    let
-        state_ =
-            model.state
-
-        newPerson =
-            { name = "New person", roleID = RoleID "product_manager" }
-
-        newState =
-            { state_ | persons = (newPerson :: state_.persons) }
-
-        newModel =
-            { model | state = newState }
-    in
-        newModel |> removeInvalidPersonAtIndex 0
 
 
 personForName : Model -> String -> Maybe Person
@@ -891,6 +771,16 @@ roleReadForID id model =
 
         Just role ->
             role.read
+
+
+roleIconForID : RoleID -> Model -> String
+roleIconForID id model =
+    case roleForID id model of
+        Nothing ->
+            "Unexpected role ID"
+
+        Just role ->
+            role.icon
 
 
 
@@ -1117,7 +1007,7 @@ updateStatusRecordsFromDialog planID model =
             model.ui.dialog.addStatusRecord_ParsedDate
 
         newStatusRecord date =
-            { statusID = model.ui.dialog.addStatusRecord_Status_SelectedID
+            { statusID = model.ui.dialog.addStatusRecord_SelectedStatusID
             , date = date
             , description = model.ui.dialog.addStatusRecord_DescriptionField_Value
             }
@@ -1157,22 +1047,40 @@ statusForID id model =
 -- UPDATE:UI:DIALOG
 
 
-prepareForDialog : DialogKind -> Model -> ( Model, Cmd Msg )
-prepareForDialog kind model =
+update_UI_Dialog_prepare : UI_Dialog_Kind -> Model -> ( Model, Cmd Msg )
+update_UI_Dialog_prepare kind model =
     let
         model_ =
-            update_UI_DialogKind kind model
+            update_UI_Dialog_Kind kind model
     in
         case kind of
-            DialogEditAssignments planID roleID ->
-                prepareForDialogEditAssignments planID roleID model_
+            UI_Dialog_EditAssignments planID roleID ->
+                update_UI_Dialog_prepare_EditAssignments planID roleID model_
+
+            UI_Dialog_Person (Just person) ->
+                update_UI_Dialog_prepare_EditPerson person model_
 
             _ ->
                 ( model_, Cmd.none )
 
 
-prepareForDialogEditAssignments : PlanID -> RoleID -> Model -> ( Model, Cmd Msg )
-prepareForDialogEditAssignments planID roleID model =
+update_UI_Dialog_prepare_EditPerson : Person -> Model -> ( Model, Cmd Msg )
+update_UI_Dialog_prepare_EditPerson person model =
+    {- This dialog requires the `dialog.person_EditedPerson` to be filled
+       with the attributes of the edited person before display.
+    -}
+    let
+        dialog_ =
+            model.ui.dialog
+
+        newDialog =
+            { dialog_ | person_EditedPerson = person }
+    in
+        ( model |> update_UI_Dialog newDialog, Cmd.none )
+
+
+update_UI_Dialog_prepare_EditAssignments : PlanID -> RoleID -> Model -> ( Model, Cmd Msg )
+update_UI_Dialog_prepare_EditAssignments planID roleID model =
     {- This dialog requires to identify the list of persons that may be
        assigned to the project. This list will be displayed in the dialog
        and the selection will serve to update the assignments.
@@ -1222,15 +1130,15 @@ prepareForDialogEditAssignments planID roleID model =
         ( model |> update_UI_Dialog newDialog, Cmd.none )
 
 
-prepareForDialogAddStatusRecord : PlanID -> Date -> Model -> ( Model, Cmd Msg )
-prepareForDialogAddStatusRecord planID date model =
+update_UI_Dialog_prepare_AddStatusRecord : PlanID -> Date -> Model -> ( Model, Cmd Msg )
+update_UI_Dialog_prepare_AddStatusRecord planID date model =
     let
         dialog_ =
             model.ui.dialog
 
         newDialog =
             { dialog_
-                | kind = DialogAddStatusRecord planID
+                | kind = UI_Dialog_AddStatusRecord planID
                 , addStatusRecord_DateField_Value = maybeDateAsString (Just date)
                 , addStatusRecord_ParsedDate = Ok date
             }
@@ -1238,7 +1146,7 @@ prepareForDialogAddStatusRecord planID date model =
         ( model |> update_UI_Dialog newDialog, Cmd.none )
 
 
-update_UI_Dialog : UI_DialogModel -> Model -> Model
+update_UI_Dialog : UI_Dialog_Model -> Model -> Model
 update_UI_Dialog newDialog model =
     let
         ui_ =
@@ -1257,18 +1165,62 @@ update_UI_Dialog_Reset model =
             model.ui
 
         newUI =
-            { ui_ | dialog = defaultUIDialogModel }
+            { ui_ | dialog = init_UI_Dialog_Model }
     in
         { model | ui = newUI }
 
 
-update_UI_DialogKind : DialogKind -> Model -> Model
-update_UI_DialogKind kind model =
+update_UI_Dialog_Kind : UI_Dialog_Kind -> Model -> Model
+update_UI_Dialog_Kind kind model =
     let
         dialog_ =
             model.ui.dialog
     in
         model |> update_UI_Dialog { dialog_ | kind = kind }
+
+
+
+-- UPDATE:UI:DIALOG:PERSONS
+
+
+update_UI_Dialog_Person_UpdateName : String -> Model -> Model
+update_UI_Dialog_Person_UpdateName nameStr model =
+    let
+        dialog_ =
+            model.ui.dialog
+
+        editedPerson_ =
+            dialog_.person_EditedPerson
+    in
+        model
+            |> update_UI_Dialog { dialog_ | person_EditedPerson = { editedPerson_ | name = nameStr } }
+
+
+update_UI_Dialog_Person_SelectRole : RoleID -> Model -> Model
+update_UI_Dialog_Person_SelectRole newRoleID model =
+    let
+        dialog_ =
+            model.ui.dialog
+
+        editedPerson_ =
+            dialog_.person_EditedPerson
+    in
+        model
+            |> update_UI_Dialog { dialog_ | person_EditedPerson = { editedPerson_ | roleID = newRoleID } }
+
+
+
+-- UPDATE:UI:DIALOG:PROJECTS
+
+
+update_UI_Dialog_AddProject_UpdateName : String -> Model -> Model
+update_UI_Dialog_AddProject_UpdateName nameStr model =
+    let
+        dialog_ =
+            model.ui.dialog
+    in
+        model
+            |> update_UI_Dialog { dialog_ | addProject_ProjectNameField_Value = nameStr }
 
 
 
@@ -1284,13 +1236,13 @@ update_UI_Dialog_AddPlans_Selected model newPlansSelected =
         model |> update_UI_Dialog { dialog_ | addPlans_Projects_SelectedProjectNames = newPlansSelected }
 
 
-update_UI_Dialog_AddPlans_ToggleNone : Model -> Model
-update_UI_Dialog_AddPlans_ToggleNone model =
+update_UI_Dialog_AddPlans_ToggleProjectByNameNone : Model -> Model
+update_UI_Dialog_AddPlans_ToggleProjectByNameNone model =
     update_UI_Dialog_AddPlans_Selected model Set.empty
 
 
-update_UI_Dialog_AddPlans_ToggleAll : Model -> Model
-update_UI_Dialog_AddPlans_ToggleAll model =
+update_UI_Dialog_AddPlans_ToggleProjectByNameAllProjects : Model -> Model
+update_UI_Dialog_AddPlans_ToggleProjectByNameAllProjects model =
     let
         allProjectNames =
             model.state.projects
@@ -1298,7 +1250,7 @@ update_UI_Dialog_AddPlans_ToggleAll model =
                 |> Set.fromList
 
         newPlansSelected =
-            if areDialogAddPlansAllSelected model then
+            if areUI_Dialog_AddPlansAllSelected model then
                 Set.empty
             else
                 allProjectNames
@@ -1306,8 +1258,8 @@ update_UI_Dialog_AddPlans_ToggleAll model =
         update_UI_Dialog_AddPlans_Selected model newPlansSelected
 
 
-update_UI_Dialog_AddPlans_Toggle : String -> Model -> Model
-update_UI_Dialog_AddPlans_Toggle projectNameStr model =
+update_UI_Dialog_AddPlans_ToggleProjectByName : String -> Model -> Model
+update_UI_Dialog_AddPlans_ToggleProjectByName projectNameStr model =
     let
         dialog_ =
             model.ui.dialog
@@ -1318,8 +1270,8 @@ update_UI_Dialog_AddPlans_Toggle projectNameStr model =
         update_UI_Dialog_AddPlans_Selected model newPlansSelected
 
 
-areDialogAddPlansAllSelected : Model -> Bool
-areDialogAddPlansAllSelected model =
+areUI_Dialog_AddPlansAllSelected : Model -> Bool
+areUI_Dialog_AddPlansAllSelected model =
     Set.size model.ui.dialog.addPlans_Projects_SelectedProjectNames == List.length model.state.projects
 
 
@@ -1336,12 +1288,12 @@ update_UI_Dialog_EditAssignmentsReset model =
         dialog_ =
             ui_.dialog
 
-        newDialogEditAssignmentsPersons =
+        newUI_Dialog_EditAssignmentsPersons =
             ui_.dialog.editAssignments_Persons_PersonNameSelected
                 |> List.map (\( pn, _ ) -> ( pn, False ))
 
         newDialog =
-            { dialog_ | editAssignments_Persons_PersonNameSelected = newDialogEditAssignmentsPersons }
+            { dialog_ | editAssignments_Persons_PersonNameSelected = newUI_Dialog_EditAssignmentsPersons }
 
         newUI =
             { ui_ | dialog = newDialog }
@@ -1349,8 +1301,8 @@ update_UI_Dialog_EditAssignmentsReset model =
         { model | ui = newUI }
 
 
-update_UI_Dialog_EditAssignmentsToggleAll : Model -> Model
-update_UI_Dialog_EditAssignmentsToggleAll model =
+update_UI_Dialog_EditAssignments_ToggleAllPersons : Model -> Model
+update_UI_Dialog_EditAssignments_ToggleAllPersons model =
     let
         ui_ =
             model.ui
@@ -1361,12 +1313,12 @@ update_UI_Dialog_EditAssignmentsToggleAll model =
         alreadySelected =
             List.all Tuple.second ui_.dialog.editAssignments_Persons_PersonNameSelected
 
-        newDialogEditAssignmentsPersons =
+        newUI_Dialog_EditAssignmentsPersons =
             dialog_.editAssignments_Persons_PersonNameSelected
                 |> List.map (\( pn, _ ) -> ( pn, not alreadySelected ))
 
         newDialog =
-            { dialog_ | editAssignments_Persons_PersonNameSelected = newDialogEditAssignmentsPersons }
+            { dialog_ | editAssignments_Persons_PersonNameSelected = newUI_Dialog_EditAssignmentsPersons }
 
         newUI =
             { ui_ | dialog = newDialog }
@@ -1374,8 +1326,8 @@ update_UI_Dialog_EditAssignmentsToggleAll model =
         { model | ui = newUI }
 
 
-update_UI_Dialog_EditAssignmentsToggle : String -> Model -> Model
-update_UI_Dialog_EditAssignmentsToggle personName model =
+update_UI_Dialog_EditAssignments_TogglePersonByName : String -> Model -> Model
+update_UI_Dialog_EditAssignments_TogglePersonByName personName model =
     let
         ui_ =
             model.ui
@@ -1383,7 +1335,7 @@ update_UI_Dialog_EditAssignmentsToggle personName model =
         dialog_ =
             ui_.dialog
 
-        newDialogEditAssignmentsPersons =
+        newUI_Dialog_EditAssignmentsPersons =
             ui_.dialog.editAssignments_Persons_PersonNameSelected
                 |> List.map
                     (\( pn, selected ) ->
@@ -1394,7 +1346,7 @@ update_UI_Dialog_EditAssignmentsToggle personName model =
                     )
 
         newDialog =
-            { dialog_ | editAssignments_Persons_PersonNameSelected = newDialogEditAssignmentsPersons }
+            { dialog_ | editAssignments_Persons_PersonNameSelected = newUI_Dialog_EditAssignmentsPersons }
 
         newUi =
             { ui_ | dialog = newDialog }
@@ -1402,8 +1354,8 @@ update_UI_Dialog_EditAssignmentsToggle personName model =
         { model | ui = newUi }
 
 
-areDialogEditAssignmentsAllSelected : Model -> Bool
-areDialogEditAssignmentsAllSelected model =
+areUI_Dialog_EditAssignmentsAllSelected : Model -> Bool
+areUI_Dialog_EditAssignmentsAllSelected model =
     model.ui.dialog.editAssignments_Persons_PersonNameSelected
         |> List.all Tuple.second
 
@@ -1419,7 +1371,7 @@ update_UI_Dialog_AddStatusRecord_SelectedStatusID newStatusID model =
             model.ui.dialog
 
         newDialog =
-            { dialog_ | addStatusRecord_Status_SelectedID = newStatusID }
+            { dialog_ | addStatusRecord_SelectedStatusID = newStatusID }
     in
         model |> update_UI_Dialog newDialog
 
@@ -1812,7 +1764,8 @@ addNewPersonButton model =
         [ 2 ]
         model.mdl
         [ Button.raised
-        , Options.onClick AddNewPerson
+        , Options.onClick AddPerson
+        , Dialog.openOn "click"
         ]
         [ text "Add person" ]
 
@@ -1820,57 +1773,24 @@ addNewPersonButton model =
 personsTable : Model -> Html Msg
 personsTable model =
     let
-        roleSelect : Int -> Person -> Html Msg
-        roleSelect pIndex person =
-            Select.render Mdl
-                [ 4, pIndex ]
-                model.mdl
-                [ Select.label "Role"
-                , Select.floatingLabel
-                , Select.ripple
-                , Select.value <| roleReadForID person.roleID model
-                ]
-                (model.state.roles
-                    |> List.map .id
-                    |> List.map
-                        (\roleID ->
-                            Select.item
-                                [ Item.onSelect (UpdatePersonRole pIndex roleID)
-                                ]
-                                [ text <| roleReadForID roleID model
-                                ]
-                        )
-                )
-
-        nameTextfield pIndex person =
-            Textfield.render Mdl
-                [ 3, pIndex ]
-                model.mdl
-                [ Textfield.value <| person.name
-                , Options.onInput <| UpdatePersonName pIndex
-                , Options.onBlur <| LeavePersonNameEdition pIndex
-                , Textfield.error (Maybe.withDefault "" (errorMessageForPersonAtIndex pIndex model))
-                    |> Options.when (errorForPersonAtIndex pIndex model && isTextfieldFocused [ 3, pIndex ] model)
-                ]
-                []
-
-        deleteButton model pIndex =
+        editButton idx person =
             Button.render Mdl
-                [ 310, pIndex ]
+                [ 310, idx ]
                 model.mdl
                 [ Button.icon
-                , Options.onClick (DeletePerson pIndex)
+                , Options.onClick (EditPerson person)
+                , Dialog.openOn "click"
                 ]
-                [ Icon.i "delete" ]
+                [ Icon.i "edit" ]
 
-        personRow pIndex person =
-            List.li []
+        personRow idx person =
+            List.li [ List.withSubtitle ]
                 [ List.content []
-                    [ List.avatarIcon "format_paint" []
-                    , nameTextfield pIndex person
-                    , roleSelect pIndex person
+                    [ List.avatarIcon (roleIconForID person.roleID model) []
+                    , text person.name
+                    , List.subtitle [] [ text <| roleReadForID person.roleID model ]
                     ]
-                , deleteButton model pIndex
+                , editButton idx person
                 ]
     in
         List.ul [ cs "persons" ]
@@ -1880,7 +1800,7 @@ personsTable model =
 
 
 
--- VIEW:UI:DIALOG
+-- VIEW:DIALOG
 
 
 dialog : Model -> Html Msg
@@ -1890,33 +1810,41 @@ dialog model =
             model.ui.dialog.kind
     in
         case dialogKind of
-            DialogNone ->
-                dialogError "Unexpected dialog" model
+            UI_Dialog_None ->
+                view_Dialog_Error "Unexpected dialog" model
 
-            DialogAddProject ->
-                dialogAddProject model
+            -- ASSIGNMENTS
+            UI_Dialog_EditAssignments planID roleID ->
+                view_Dialog_EditAssignments planID roleID model
 
-            DialogAddPlans cycleIdx ->
+            -- PERSONS
+            UI_Dialog_Person maybePerson ->
+                view_Dialog_Person maybePerson model
+
+            -- PLANS
+            UI_Dialog_AddPlans cycleIdx ->
                 let
                     cycle_ =
                         cycleForIndex cycleIdx model
                 in
                     case cycle_ of
                         Nothing ->
-                            dialogError "Unknown cycle" model
+                            view_Dialog_Error "Unknown cycle" model
 
                         Just cycle ->
-                            dialogAddPlan cycle model
+                            view_Dialog_AddPlan cycle model
 
-            DialogEditAssignments planID roleID ->
-                dialogEditAssignments planID roleID model
+            -- PROJECTS
+            UI_Dialog_AddProject ->
+                view_Dialog_AddProject model
 
-            DialogAddStatusRecord planID ->
+            -- STATUS_RECORDS
+            UI_Dialog_AddStatusRecord planID ->
                 view_Dialog_AddStatusRecord planID model
 
 
-dialogError : String -> Model -> Html Msg
-dialogError message model =
+view_Dialog_Error : String -> Model -> Html Msg
+view_Dialog_Error message model =
     Dialog.view
         []
         [ Dialog.title [] [ text message ]
@@ -1932,11 +1860,116 @@ dialogError message model =
 
 
 
--- VIEW:UI:DIALOG:PROJECT
+-- VIEW:DIALOG:PERSON
 
 
-dialogAddProject : Model -> Html Msg
-dialogAddProject model =
+view_Dialog_Person : Maybe Person -> Model -> Html Msg
+view_Dialog_Person maybePerson model =
+    let
+        editedPerson =
+            model.ui.dialog.person_EditedPerson
+
+        roleSelect : Html Msg
+        roleSelect =
+            Select.render Mdl
+                [ 322 ]
+                model.mdl
+                [ Select.label "Role"
+                , Select.floatingLabel
+                , Select.ripple
+                , Select.value <| roleReadForID editedPerson.roleID model
+                ]
+                (model.state.roles
+                    |> List.map .id
+                    |> List.map
+                        (\roleID ->
+                            Select.item
+                                [ Item.onSelect (UI_Dialog_Person_SelectRole roleID)
+                                ]
+                                [ text <| roleReadForID roleID model
+                                ]
+                        )
+                )
+
+        nameErrorIfApplicable =
+            let
+                value =
+                    editedPerson.name
+            in
+                if String.length value == 0 then
+                    Textfield.error "The name can't be empty"
+                else
+                    Options.nop
+
+        dialogHasError =
+            not (nameErrorIfApplicable == Options.nop)
+
+        nameField : Html Msg
+        nameField =
+            Textfield.render Mdl
+                [ 321 ]
+                model.mdl
+                [ Options.onInput UI_Dialog_Person_UpdateName
+                , Textfield.label "Name"
+                , Textfield.floatingLabel
+                , Textfield.text_
+                , Textfield.value editedPerson.name
+                , nameErrorIfApplicable
+                ]
+                []
+
+        ( dialogTitle, dialogPrimaryAction, dialogMsg, additionalActions ) =
+            case maybePerson of
+                Nothing ->
+                    ( "Add person", "Create", CreatePersonFromDialog, [] )
+
+                Just person ->
+                    ( "Edit person"
+                    , "Update"
+                    , UpdatePersonFromDialog person
+                    , [ Button.render Mdl
+                            [ 327 ]
+                            model.mdl
+                            [ Dialog.closeOn "click"
+                            , Options.onClick (DeletePersonFromDialog person)
+                            ]
+                            [ Icon.i "delete" ]
+                      ]
+                    )
+
+        dialogActions =
+            [ Button.render Mdl
+                [ 328 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick dialogMsg
+                , Button.disabled |> Options.when dialogHasError
+                ]
+                [ text dialogPrimaryAction ]
+            , Button.render Mdl
+                [ 329 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick UI_Dialog_Reset
+                ]
+                [ text "Cancel" ]
+            ]
+                ++ additionalActions
+    in
+        Dialog.view
+            []
+            [ Dialog.title [] [ text dialogTitle ]
+            , Dialog.content [] [ nameField, roleSelect ]
+            , Dialog.actions [] dialogActions
+            ]
+
+
+
+-- VIEW:DIALOG:PROJECT
+
+
+view_Dialog_AddProject : Model -> Html Msg
+view_Dialog_AddProject model =
     Dialog.view
         []
         [ Dialog.title [] [ text "Add project" ]
@@ -1944,7 +1977,7 @@ dialogAddProject model =
             [ Textfield.render Mdl
                 [ 6 ]
                 model.mdl
-                [ Options.onInput UI_Dialog_AddProjectUpdateFieldName
+                [ Options.onInput UI_Dialog_AddProject_UpdateName
                 , Textfield.label "Name"
                 , Textfield.floatingLabel
                 , Textfield.text_
@@ -1971,11 +2004,11 @@ dialogAddProject model =
 
 
 
--- VIEW:UI:DIALOG:PLAN
+-- VIEW:DIALOG:PLAN
 
 
-dialogAddPlan : Cycle -> Model -> Html Msg
-dialogAddPlan cycle model =
+view_Dialog_AddPlan : Cycle -> Model -> Html Msg
+view_Dialog_AddPlan cycle model =
     let
         cycleIdxInt =
             cycleIndexToInt cycle.index
@@ -2021,8 +2054,8 @@ dialogAddPlan cycle model =
                                     [ Toggles.checkbox Mdl
                                         [ -1 ]
                                         model.mdl
-                                        [ Options.onToggle UI_Dialog_AddPlans_ToggleAll
-                                        , Toggles.value (areDialogAddPlansAllSelected model)
+                                        [ Options.onToggle UI_Dialog_AddPlans_ToggleProjectByNameAllProjects
+                                        , Toggles.value (areUI_Dialog_AddPlansAllSelected model)
                                         ]
                                         []
                                     ]
@@ -2039,7 +2072,7 @@ dialogAddPlan cycle model =
                                                 [ Toggles.checkbox Mdl
                                                     [ idx ]
                                                     model.mdl
-                                                    [ Options.onToggle (UI_Dialog_AddPlans_Toggle projectNameStr)
+                                                    [ Options.onToggle (UI_Dialog_AddPlans_ToggleProjectByName projectNameStr)
                                                     , Toggles.value <| Set.member projectNameStr model.ui.dialog.addPlans_Projects_SelectedProjectNames
                                                     ]
                                                     []
@@ -2064,11 +2097,11 @@ dialogAddPlan cycle model =
 
 
 
--- VIEW:UI:DIALOG:ASSIGNMENTS
+-- VIEW:DIALOG:ASSIGNMENTS
 
 
-dialogEditAssignments : PlanID -> RoleID -> Model -> Html Msg
-dialogEditAssignments planID roleID model =
+view_Dialog_EditAssignments : PlanID -> RoleID -> Model -> Html Msg
+view_Dialog_EditAssignments planID roleID model =
     let
         personsForRoleNames =
             personsForRole model roleID
@@ -2113,8 +2146,8 @@ dialogEditAssignments planID roleID model =
                                     [ Toggles.checkbox Mdl
                                         [ -1 ]
                                         model.mdl
-                                        [ Options.onToggle UI_Dialog_EditAssignmentsToggleAll
-                                        , Toggles.value (areDialogEditAssignmentsAllSelected model)
+                                        [ Options.onToggle UI_Dialog_EditAssignments_ToggleAllPersons
+                                        , Toggles.value (areUI_Dialog_EditAssignmentsAllSelected model)
                                         ]
                                         []
                                     ]
@@ -2133,7 +2166,7 @@ dialogEditAssignments planID roleID model =
                                                 [ Toggles.checkbox Mdl
                                                     [ idx ]
                                                     model.mdl
-                                                    [ Options.onToggle (UI_Dialog_EditAssignmentsToggle pn)
+                                                    [ Options.onToggle (UI_Dialog_EditAssignments_TogglePersonByName pn)
                                                     , Toggles.value isSelected
                                                     ]
                                                     []
@@ -2158,7 +2191,7 @@ dialogEditAssignments planID roleID model =
 
 
 
--- VIEW:UI:DIALOG:STATUS_RECORD
+-- VIEW:DIALOG:STATUS_RECORD
 
 
 view_Dialog_AddStatusRecord : PlanID -> Model -> Html Msg
@@ -2172,7 +2205,7 @@ view_Dialog_AddStatusRecord planID model =
                 [ Select.label "Status"
                 , Select.floatingLabel
                 , Select.ripple
-                , Select.value <| statusReadForID model.ui.dialog.addStatusRecord_Status_SelectedID model
+                , Select.value <| statusReadForID model.ui.dialog.addStatusRecord_SelectedStatusID model
                 ]
                 (model.state.statuses
                     |> List.map .id
@@ -2499,6 +2532,20 @@ createRequest url body =
 
 
 
+-- MAIN
+
+
+main : Program Never Model Msg
+main =
+    Html.program
+        { init = ( initModel, Cmd.batch [ setDate, fetchLatestState ] )
+        , view = view
+        , update = update
+        , subscriptions = Material.subscriptions Mdl
+        }
+
+
+
 -- UTILS
 
 
@@ -2521,20 +2568,41 @@ httpErrorToString error =
             "BadPayload: " ++ msg
 
 
+monthAsString : Date.Month -> String
+monthAsString month =
+    case month of
+        Date.Jan ->
+            "01"
 
--- MAIN
+        Date.Feb ->
+            "02"
 
+        Date.Mar ->
+            "03"
 
-initModel : Model
-initModel =
-    defaultModelForDev
+        Date.Apr ->
+            "04"
 
+        Date.May ->
+            "05"
 
-main : Program Never Model Msg
-main =
-    Html.program
-        { init = ( initModel, Cmd.batch [ setDate, fetchLatestState ] )
-        , view = view
-        , update = update
-        , subscriptions = Material.subscriptions Mdl
-        }
+        Date.Jun ->
+            "06"
+
+        Date.Jul ->
+            "07"
+
+        Date.Aug ->
+            "08"
+
+        Date.Sep ->
+            "09"
+
+        Date.Oct ->
+            "10"
+
+        Date.Nov ->
+            "11"
+
+        Date.Dec ->
+            "12"
