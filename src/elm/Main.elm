@@ -1522,7 +1522,7 @@ cycleColumns model =
 cycleColumn : Model -> Cycle -> Html Msg
 cycleColumn model cycle =
     div
-        [ cs "cycles--column" ]
+        [ cs "cycles__column" ]
         (cycleColumnHeader model cycle :: cycleColumnProjects model cycle)
 
 
@@ -1532,34 +1532,36 @@ cycleColumnHeader model cycle =
         nonAssignments =
             personsNotAssignedForCycle model cycle.index
                 |> List.map (\p -> { personName = p.name })
+
+        plansCount =
+            plansForCycleIndex cycle.index model
+                |> List.length
+
+        buttonTitle =
+            case plansCount of
+                0 ->
+                    "Plan projects"
+
+                1 ->
+                    " 1 project planned"
+
+                _ ->
+                    (plansCount |> toString) ++ " projects planned"
     in
         Card.view
-            [ cs "cycles--column--header"
+            [ cs "cycles__column__header"
             , css "width" "256px"
             , Elevation.e2
             ]
-            [ Card.title []
-                [ Card.head []
-                    [ text <| toString cycle.index
-                    ]
+            [ Card.title
+                [ cs "cycles__column__header__title"
+                , css "flex-direction" "row"
                 ]
-            , Card.text []
-                [ assignmentsBox
-                    [ 112, cycleIndexToInt cycle.index ]
-                    model
-                    Nothing
-                    nonAssignments
-                    "Not assigned: "
+                [ span [ cs "cycles__column__header__title__hashtag" ] [ text "#" ]
+                , span [ cs "cycles__column__header__title__index" ] [ text <| (toString << cycleIndexToInt) cycle.index ]
+                , span [ cs "cycles__column__header__title__description" ] [ text "Some description (not implemented yet)" ]
                 ]
-            , Card.actions
-                [ Card.border
-
-                -- Modify flexbox to accomodate small text in action block
-                , css "display" "flex"
-                , css "justify-content" "space-between"
-                , css "align-items" "center"
-                , css "padding" "8px 16px 8px 16px"
-                ]
+            , Card.text [ cs "cycles__column__header__text" ]
                 [ Button.render Mdl
                     [ 110, cycleIndexToInt cycle.index ]
                     model.mdl
@@ -1567,7 +1569,13 @@ cycleColumnHeader model cycle =
                     , Options.onClick (AddPlans cycle.index)
                     , Dialog.openOn "click"
                     ]
-                    [ text "Plan projects" ]
+                    [ text buttonTitle ]
+                , assignmentsBox
+                    [ 112, cycleIndexToInt cycle.index ]
+                    model
+                    Nothing
+                    nonAssignments
+                    "Not assigned: "
                 ]
             ]
 
@@ -1606,7 +1614,7 @@ cycleColumnPlanCard model i plan =
 
             Just project ->
                 Card.view
-                    [ cs "cycles--project-card"
+                    [ cs "cycles__project-card"
                     , css "width" "256px"
                     , Elevation.e2
                     ]
@@ -1617,7 +1625,7 @@ cycleColumnPlanCard model i plan =
                     , Card.text []
                         [ latestStatusText ]
                     , Card.actions
-                        [ cs "cycles--project-card__assignments" ]
+                        [ cs "cycles__project-card__assignments" ]
                         [ div []
                             [ assignmentsBox
                                 [ 120, cycleIndexToInt cycleIdx, i ]
@@ -1648,39 +1656,47 @@ assignmentsBox keyPrefix model buttonAction assignments tooltipTextPrefix =
             Tooltip.render Mdl
                 (keyPrefix ++ [ i ])
                 model.mdl
-                [ Tooltip.right ]
+                [ Tooltip.top ]
                 [ text <| tooltipTextPrefix ++ List.foldl (++) "" (List.intersperse ", " personNames) ]
 
         itemElement : Int -> Role -> List String -> List (Html Msg)
         itemElement i role personNames =
-            case buttonAction of
-                Nothing ->
-                    [ span
-                        [ tooltipAttachment i ]
-                        [ Icon.i role.icon
-                        , text <| toString (List.length personNames)
-                        ]
-                    , tooltipRender i personNames
-                    ]
+            let
+                personCount =
+                    personNames |> List.length
 
-                Just action ->
-                    [ Button.render Mdl
-                        (keyPrefix ++ [ i ])
-                        model.mdl
-                        [ Button.ripple
-                        , Options.onClick (action role.id)
-                        , Dialog.openOn "click"
-                        , tooltipAttachment i
-                        ]
-                        [ div []
-                            [ Icon.i role.icon
-                            , text <| toString (List.length personNames)
+                colorIfApplicable =
+                    css "color" "#D43F00" |> Options.when (personCount == 0)
+            in
+                case buttonAction of
+                    Nothing ->
+                        [ span
+                            [ tooltipAttachment i
+                            , cs "assignments-box__item"
+                            , colorIfApplicable
                             ]
+                            [ Icon.i role.icon, text <| toString personCount ]
+                        , tooltipRender i personNames
                         ]
-                    , tooltipRender i personNames
-                    ]
+
+                    Just action ->
+                        [ Button.render Mdl
+                            (keyPrefix ++ [ i ])
+                            model.mdl
+                            [ Button.ripple
+                            , Options.onClick (action role.id)
+                            , Dialog.openOn "click"
+                            , tooltipAttachment i
+                            ]
+                            [ div []
+                                [ Icon.i role.icon
+                                , text <| toString personCount
+                                ]
+                            ]
+                        , tooltipRender i personNames
+                        ]
     in
-        div []
+        div [ cs "assignments-box" ]
             (model.state.roles
                 |> List.indexedMap
                     (\i role ->

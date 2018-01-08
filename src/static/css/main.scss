@@ -2,26 +2,6 @@
   z-index: 0; /* to enable clicking the elm-reactor's overlay */
 }
 
-.mdl-list__item {
-  overflow: visible; /* to enable select dropdowns in lists */
-}
-
-.cycles {
-  display: flex;
-}
-
-.cycles--column {
-  padding-right: 10px;
-}
-
-.cycles--column--header {
-  margin-bottom: 10px;
-}
-
-.projects .mdl-card {
-  width: auto;
-}
-
 #app-last-error {
   position: absolute;
   bottom: 0;
@@ -30,3 +10,68 @@
   padding: 10px;
   width: 100%;
 }
+
+.mdl-list__item {
+  overflow: visible; /* to enable select dropdowns in lists */
+}
+
+.cycles {
+  display: flex;
+}
+
+.cycles__column {
+  padding-right: 10px;
+}
+
+.cycles__column__header {
+  margin-bottom: 10px;
+}
+
+.cycles__column__header__title {
+  flex-direction: row;
+  padding-bottom: 0;
+}
+
+.cycles__column__header__title__hashtag {
+  font-size: 2.5em;
+  color: #e0dbdb;
+}
+
+.cycles__column__header__title__index {
+  font-size: 5em;
+  align-self: flex-end;
+}
+
+.cycles__column__header__title__description {
+  font-size: 1rem;
+  color: rgba(0,0,0,.54);
+  padding-bottom: 1.1em;
+  padding-left: 0.5em;
+  align-self: flex-end;
+}
+
+.cycles__column__header__text {
+  padding-top: 0;
+
+  button {
+    width: 100%;
+  }
+}
+
+.projects .mdl-card {
+  width: auto;
+}
+
+.assignments-box {
+  margin-top: 0.5em;
+}
+
+.assignments-box__item {
+  margin-right: 1em;
+
+  .material-icons {
+    vertical-align: middle;
+  }
+}
+
+
