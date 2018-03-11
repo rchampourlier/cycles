@@ -211,6 +211,7 @@ type alias UI_Model =
      112: cycle column > header > assignment box > tooltips
      120: cycle column > plan > actions > assignments
      130: cycle column > plan > actions > add status button
+     131: cycle column > plan > actions > add status button > tooltip
 
    # 3xx serie: persons tab
      310: person row delete button
@@ -1607,6 +1608,40 @@ cycleColumnPlanCard model i plan =
 
                 Just sr ->
                     div [] [ text <| sr.description ]
+
+        latestStatusIcon =
+            case latestStatusRecord_ of
+                Nothing ->
+                    Icon.i "access_time"
+
+                Just sr ->
+                    case statusForID sr.statusID model of
+                        Nothing ->
+                            Icon.i "access_time"
+
+                        Just s ->
+                            Icon.i s.icon
+
+        addStatusRecordButton =
+            let
+                keySuffix =
+                    [ cycleIndexToInt cycleIdx, i ]
+            in
+                [ Button.render Mdl
+                    ([ 130 ] ++ keySuffix)
+                    model.mdl
+                    [ Button.minifab
+                    , Options.onClick (AddStatusRecord plan.id)
+                    , Dialog.openOn "click"
+                    , Tooltip.attach Mdl ([ 131 ] ++ keySuffix)
+                    ]
+                    [ Icon.i "add" ]
+                , Tooltip.render Mdl
+                    ([ 131 ] ++ keySuffix)
+                    model.mdl
+                    [ Tooltip.top ]
+                    [ text "Add new status record" ]
+                ]
     in
         case project_ of
             Nothing ->
@@ -1622,8 +1657,15 @@ cycleColumnPlanCard model i plan =
                         [ css "flex-direction" "column" ]
                         [ Card.head [] [ text <| toString (projectNameToString project.name) ]
                         ]
-                    , Card.text []
-                        [ latestStatusText ]
+                    , Card.text
+                        [ cs "cycles__project-card__content" ]
+                        [ div
+                            [ cs "cycles__project-card__latest-status" ]
+                            [ latestStatusIcon, latestStatusText ]
+                        , div
+                            [ cs "cycles__project-card__add-status-button" ]
+                            addStatusRecordButton
+                        ]
                     , Card.actions
                         [ cs "cycles__project-card__assignments" ]
                         [ div []
@@ -1633,14 +1675,6 @@ cycleColumnPlanCard model i plan =
                                 (Just (EditAssignments (PlanID cycleIdx project.name)))
                                 plan.assignments
                                 "Assigned: "
-                            , Button.render Mdl
-                                [ 130, cycleIndexToInt cycleIdx, i ]
-                                model.mdl
-                                [ Button.ripple
-                                , Options.onClick (AddStatusRecord plan.id)
-                                , Dialog.openOn "click"
-                                ]
-                                [ div [] [ text "Record status" ] ]
                             ]
                         ]
                     ]

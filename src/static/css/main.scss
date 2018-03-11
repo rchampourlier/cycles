@@ -30,6 +30,7 @@
 .cycles__column__header__title {
   flex-direction: row;
   padding-bottom: 0;
+  font-family: "Roboto","Helvetica","Arial",sans-serif;
 }
 
 .cycles__column__header__title__hashtag {
@@ -58,12 +59,53 @@
   }
 }
 
+.cycles__project-card {
+
+  .mdl-card__title {
+    border-bottom: solid 1px #DDD;
+  }
+
+  .mdl-card__title-text {
+    align-self: center !important;
+    text-transform: uppercase;
+    font-weight: bold;
+    font-size: 1.2em;
+    color: #333;
+  }
+}
+
+.cycles__project-card__content {
+    border-bottom: solid 1px #DDD;
+}
+
+.cycles__project-card__latest-status {
+  display: flex;
+
+  > i {
+    margin-right: 10px;
+  }
+}
+
+.cycles__project-card__add-status-button {
+  display: flex;
+  flex-direction: row-reverse;
+
+  button {
+    margin: 0;
+  }
+}
+
 .projects .mdl-card {
   width: auto;
 }
 
 .assignments-box {
   margin-top: 0.5em;
+
+  .mdl-button {
+    min-width: auto;
+    padding: 0 8px;
+  }
 }
 
 .assignments-box__item {
