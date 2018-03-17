@@ -21,6 +21,7 @@ import Material.Grid as Grid
 import Material.Icon as Icon
 import Material.List as List
 import Material.Dropdown.Item as Item
+import Material.Menu as Menu
 import Material.Options as Options exposing (cs, css, div, id, span)
 import Material.Select as Select
 import Material.Table as Table
@@ -212,6 +213,7 @@ type alias UI_Model =
      120: cycle column > plan > actions > assignments
      130: cycle column > plan > actions > add status button
      131: cycle column > plan > actions > add status button > tooltip
+     132: cycle column > plan > actions > menu
 
    # 3xx serie: persons tab
      310: person row delete button
@@ -263,6 +265,7 @@ type UI_Dialog_Kind
     | UI_Dialog_Person (Maybe Person)
       -- PLANS
     | UI_Dialog_AddPlans CycleIndex
+    | UI_Dialog_RemovePlanConfirmation PlanID
       -- PROJECTS
     | UI_Dialog_AddProject
       -- STATUS_RECORDS
@@ -328,6 +331,10 @@ init_UI_Dialog_Model =
     }
 
 
+
+-- HELPERS
+
+
 maybeDateAsString : Maybe Date -> String
 maybeDateAsString maybeDate =
     case maybeDate of
@@ -339,22 +346,6 @@ maybeDateAsString maybeDate =
                 |> List.map (\f -> f date)
                 |> List.intersperse "-"
                 |> List.foldr (++) ""
-
-
-nextIndex : Model -> CycleIndex
-nextIndex model =
-    let
-        cycles =
-            model.state.cycles
-    in
-        case cycles of
-            [] ->
-                CycleIndex 1
-
-            c :: _ ->
-                case c.index of
-                    CycleIndex i ->
-                        CycleIndex (i + 1)
 
 
 
@@ -380,6 +371,8 @@ type
       -- PLANS
     | AddPlans CycleIndex
     | AddPlansFromDialog CycleIndex
+    | RemovePlan PlanID
+    | RemovePlanWithConfirmation PlanID
       -- STATUS_RECORDS
     | AddStatusRecord PlanID
     | CreateStatusRecordFromDialog PlanID
@@ -420,14 +413,9 @@ update msg model =
         case msg of
             -- EVENTS
             CreateCycle ->
-                let
-                    state_ =
-                        model.state
-
-                    newCycle =
-                        { index = nextIndex model }
-                in
-                    updateModel { model | state = { state_ | cycles = newCycle :: state_.cycles } }
+                model
+                    |> createCycle
+                    |> updateModel
 
             -- PERSONS
             AddPerson ->
@@ -479,6 +467,16 @@ update msg model =
                 model
                     |> addPlansFromDialog cycleIdx
                     |> update_UI_Dialog_Reset
+                    |> updateModel
+
+            RemovePlan planID ->
+                update_UI_Dialog_prepare
+                    (UI_Dialog_RemovePlanConfirmation planID)
+                    model
+
+            RemovePlanWithConfirmation planID ->
+                model
+                    |> removePlan planID
                     |> updateModel
 
             -- ASSIGNMENTS
@@ -593,11 +591,42 @@ updateState newState model =
 -- UPDATE:CYCLES
 
 
+nextIndex : Model -> CycleIndex
+nextIndex model =
+    let
+        cycles =
+            model.state.cycles
+    in
+        case cycles of
+            [] ->
+                CycleIndex 1
+
+            c :: _ ->
+                case c.index of
+                    CycleIndex i ->
+                        CycleIndex (i + 1)
+
+
 cycleForIndex : CycleIndex -> Model -> Maybe Cycle
 cycleForIndex cycleIdx model =
     model.state.cycles
         |> List.filter (\c -> c.index == cycleIdx)
         |> List.head
+
+
+createCycle : Model -> Model
+createCycle model =
+    let
+        state_ =
+            model.state
+
+        newCycle =
+            { index = nextIndex model }
+
+        newState =
+            { state_ | cycles = newCycle :: state_.cycles }
+    in
+        { model | state = newState }
 
 
 updateCycleAtIndex : CycleIndex -> Cycle -> Model -> Model
@@ -863,11 +892,30 @@ updatePlan newPlan model =
                         else
                             p
                     )
+    in
+        model |> updatePlans newPlans
+
+
+updatePlans : List Plan -> Model -> Model
+updatePlans plans model =
+    let
+        state_ =
+            model.state
 
         newState =
-            { state_ | plans = newPlans }
+            { state_ | plans = plans }
     in
         { model | state = newState }
+
+
+removePlan : PlanID -> Model -> Model
+removePlan planID model =
+    let
+        newPlans =
+            model.state.plans
+                |> List.filter (\p -> p.id /= planID)
+    in
+        model |> updatePlans newPlans
 
 
 plansForCycleIndex : CycleIndex -> Model -> List Plan
@@ -1601,6 +1649,9 @@ cycleColumnPlanCard model i plan =
                 |> List.sortWith (\srA srB -> Date.compare srB.date srA.date)
                 |> List.head
 
+        keySuffix =
+            [ cycleIndexToInt cycleIdx, i ]
+
         latestStatusText =
             case latestStatusRecord_ of
                 Nothing ->
@@ -1623,24 +1674,32 @@ cycleColumnPlanCard model i plan =
                             Icon.i s.icon
 
         addStatusRecordButton =
-            let
-                keySuffix =
-                    [ cycleIndexToInt cycleIdx, i ]
-            in
-                [ Button.render Mdl
-                    ([ 130 ] ++ keySuffix)
-                    model.mdl
-                    [ Button.minifab
-                    , Options.onClick (AddStatusRecord plan.id)
+            [ Button.render Mdl
+                ([ 130 ] ++ keySuffix)
+                model.mdl
+                [ Button.minifab
+                , Options.onClick (AddStatusRecord plan.id)
+                , Dialog.openOn "click"
+                , Tooltip.attach Mdl ([ 131 ] ++ keySuffix)
+                ]
+                [ Icon.i "add" ]
+            , Tooltip.render Mdl
+                ([ 131 ] ++ keySuffix)
+                model.mdl
+                [ Tooltip.top ]
+                [ text "Add new status record" ]
+            ]
+
+        planActionsMenu =
+            Menu.render Mdl
+                ([ 132 ] ++ keySuffix)
+                model.mdl
+                [ Menu.bottomLeft ]
+                [ Item.item
+                    [ Item.onSelect (RemovePlan plan.id)
                     , Dialog.openOn "click"
-                    , Tooltip.attach Mdl ([ 131 ] ++ keySuffix)
                     ]
-                    [ Icon.i "add" ]
-                , Tooltip.render Mdl
-                    ([ 131 ] ++ keySuffix)
-                    model.mdl
-                    [ Tooltip.top ]
-                    [ text "Add new status record" ]
+                    [ text "Remove this plan" ]
                 ]
     in
         case project_ of
@@ -1667,7 +1726,7 @@ cycleColumnPlanCard model i plan =
                             addStatusRecordButton
                         ]
                     , Card.actions
-                        [ cs "cycles__project-card__assignments" ]
+                        [ cs "cycles__project-card__actions" ]
                         [ div []
                             [ assignmentsBox
                                 [ 120, cycleIndexToInt cycleIdx, i ]
@@ -1675,6 +1734,7 @@ cycleColumnPlanCard model i plan =
                                 (Just (EditAssignments (PlanID cycleIdx project.name)))
                                 plan.assignments
                                 "Assigned: "
+                            , planActionsMenu
                             ]
                         ]
                     ]
@@ -1883,6 +1943,14 @@ dialog model =
 
                         Just cycle ->
                             view_Dialog_AddPlan cycle model
+
+            UI_Dialog_RemovePlanConfirmation planID ->
+                case personsAssignedForPlan model planID of
+                    [] ->
+                        view_Dialog_RemovePlanConfirmation planID model
+
+                    _ ->
+                        view_Dialog_Error "Can't remove plan with assignments" model
 
             -- PROJECTS
             UI_Dialog_AddProject ->
@@ -2144,6 +2212,31 @@ view_Dialog_AddPlan cycle model =
                     , cancelButton
                     ]
                 ]
+
+
+view_Dialog_RemovePlanConfirmation : PlanID -> Model -> Html Msg
+view_Dialog_RemovePlanConfirmation planID model =
+    Dialog.view
+        []
+        [ Dialog.title [] [ text "Remove plan" ]
+        , Dialog.content [] [ Html.p [] [ text "Are you sure?" ] ]
+        , Dialog.actions []
+            [ Button.render Mdl
+                [ 902 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick (RemovePlanWithConfirmation planID)
+                ]
+                [ text "Remove" ]
+            , Button.render Mdl
+                [ 901 ]
+                model.mdl
+                [ Dialog.closeOn "click"
+                , Options.onClick UI_Dialog_Reset
+                ]
+                [ text "Cancel" ]
+            ]
+        ]
 
 
 
