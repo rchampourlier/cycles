@@ -6,6 +6,7 @@ import Date.Extra as Date
 import Dict exposing (Dict)
 import Html exposing (Html, text)
 import Html.Attributes exposing (class, href)
+import Html.Events
 import Http
 import Json.Decode
 import Json.Decode.Extra
@@ -14,10 +15,8 @@ import List as L
 import Material
 import Material.Button as Button
 import Material.Card as Card
-import Material.Color as Color
 import Material.Dialog as Dialog
 import Material.Elevation as Elevation
-import Material.Grid as Grid
 import Material.Icon as Icon
 import Material.List as List
 import Material.Dropdown.Item as Item
@@ -90,6 +89,7 @@ cycleIndexToInt cycleIdx =
 
 type alias Project =
     { name : ProjectName
+    , goals : List Goal
     }
 
 
@@ -102,6 +102,35 @@ projectNameToString pn =
     case pn of
         ProjectName n ->
             n
+
+
+
+-- MODEL:GOALS
+
+
+type alias Goal =
+    { label : String
+    , description : String
+    , goalStatusID : GoalStatusID
+    }
+
+
+type GoalStatusID
+    = GoalStatusID String
+
+
+goalStatusIDToString : GoalStatusID -> String
+goalStatusIDToString id =
+    case id of
+        GoalStatusID id_ ->
+            id_
+
+
+type alias GoalStatus =
+    { id : GoalStatusID
+    , read : String
+    , icon : String
+    }
 
 
 
@@ -240,7 +269,7 @@ type alias UI_Dialog_Model =
     , person_EditedPerson : Person
 
     -- PROJECTS
-    , addProject_ProjectNameField_Value : String
+    , project_EditedProject : Project
 
     -- PLANS
     , addPlans_Projects_SelectedProjectNames : Set String -- project names as String
@@ -267,7 +296,7 @@ type UI_Dialog_Kind
     | UI_Dialog_AddPlans CycleIndex
     | UI_Dialog_RemovePlanConfirmation PlanID
       -- PROJECTS
-    | UI_Dialog_AddProject
+    | UI_Dialog_Project (Maybe Project)
       -- STATUS_RECORDS
     | UI_Dialog_AddStatusRecord PlanID
 
@@ -320,7 +349,7 @@ init_UI_Dialog_Model : UI_Dialog_Model
 init_UI_Dialog_Model =
     { kind = UI_Dialog_None
     , person_EditedPerson = Person "New person" (RoleID "product_manager")
-    , addProject_ProjectNameField_Value = ""
+    , project_EditedProject = Project (ProjectName "") []
     , addPlans_Projects_SelectedProjectNames = Set.empty
     , editAssignments_Persons_PersonNameSelected = []
     , addStatusRecord_SelectedStatusID = StatusID "on-track"
@@ -368,6 +397,9 @@ type
       -- PROJECTS
     | AddProject
     | CreateProjectFromDialog
+    | EditProject Project
+    | UpdateProjectFromDialog Project
+    | DeleteProjectFromDialog Project
       -- PLANS
     | AddPlans CycleIndex
     | AddPlansFromDialog CycleIndex
@@ -388,7 +420,7 @@ type
     | UI_Dialog_Person_UpdateName String
     | UI_Dialog_Person_SelectRole RoleID
       -- UI:DIALOG:PROJECTS
-    | UI_Dialog_AddProject_UpdateName String
+    | UI_Dialog_Project_UpdateName String
       -- UI:DIALOG:PLANS
     | UI_Dialog_AddPlans_ToggleProjectByNameAllProjects
     | UI_Dialog_AddPlans_ToggleProjectByName String
@@ -429,7 +461,9 @@ update msg model =
                     |> updateModel
 
             EditPerson person ->
-                update_UI_Dialog_prepare (UI_Dialog_Person (Just person)) model
+                update_UI_Dialog_prepare
+                    (UI_Dialog_Person (Just person))
+                    model
 
             UpdatePersonFromDialog person ->
                 model
@@ -447,17 +481,31 @@ update msg model =
 
             -- PROJECTS
             AddProject ->
-                update_UI_Dialog_prepare UI_Dialog_AddProject model
+                update_UI_Dialog_prepare (UI_Dialog_Project Nothing) model
 
             CreateProjectFromDialog ->
-                let
-                    newProject =
-                        { name = ProjectName model.ui.dialog.addProject_ProjectNameField_Value }
-                in
+                model
+                    |> addProject model.ui.dialog.project_EditedProject
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
+
+            EditProject project ->
+                update_UI_Dialog_prepare
+                    (UI_Dialog_Project (Just project))
                     model
-                        |> addProject newProject
-                        |> update_UI_Dialog_Reset
-                        |> updateModel
+
+            UpdateProjectFromDialog project ->
+                model
+                    |> deleteProject project
+                    |> addProject model.ui.dialog.project_EditedProject
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
+
+            DeleteProjectFromDialog project ->
+                model
+                    |> deleteProject project
+                    |> update_UI_Dialog_Reset
+                    |> updateModel
 
             -- PLANS
             AddPlans cycleIdx ->
@@ -547,8 +595,8 @@ update msg model =
                 ( model |> update_UI_Dialog_AddPlans_ToggleProjectByName projectNameStr, Cmd.none )
 
             -- UI:DIALOG:PROJECTS
-            UI_Dialog_AddProject_UpdateName nameStr ->
-                ( model |> update_UI_Dialog_AddProject_UpdateName nameStr, Cmd.none )
+            UI_Dialog_Project_UpdateName nameStr ->
+                ( model |> update_UI_Dialog_Project_UpdateName nameStr, Cmd.none )
 
             -- UI:DIALOG:ASSIGNMENTS
             UI_Dialog_EditAssignments_ToggleAllPersons ->
@@ -952,6 +1000,22 @@ addProject project model =
         { model | state = newState }
 
 
+deleteProject : Project -> Model -> Model
+deleteProject project model =
+    let
+        state_ =
+            model.state
+
+        newProjects =
+            state_.projects
+                |> List.filter (\p -> p.name /= project.name)
+
+        newState =
+            { state_ | projects = newProjects }
+    in
+        { model | state = newState }
+
+
 projectForName : Model -> ProjectName -> Maybe Project
 projectForName model projectName =
     model.state.projects
@@ -1109,6 +1173,9 @@ update_UI_Dialog_prepare kind model =
             UI_Dialog_Person (Just person) ->
                 update_UI_Dialog_prepare_EditPerson person model_
 
+            UI_Dialog_Project (Just project) ->
+                update_UI_Dialog_prepare_EditProject project model_
+
             _ ->
                 ( model_, Cmd.none )
 
@@ -1124,6 +1191,21 @@ update_UI_Dialog_prepare_EditPerson person model =
 
         newDialog =
             { dialog_ | person_EditedPerson = person }
+    in
+        ( model |> update_UI_Dialog newDialog, Cmd.none )
+
+
+update_UI_Dialog_prepare_EditProject : Project -> Model -> ( Model, Cmd Msg )
+update_UI_Dialog_prepare_EditProject project model =
+    {- This dialog requires the `dialog.project_EditedProject` to be filled
+       with the attributes of the edited project before display.
+    -}
+    let
+        dialog_ =
+            model.ui.dialog
+
+        newDialog =
+            { dialog_ | project_EditedProject = project }
     in
         ( model |> update_UI_Dialog newDialog, Cmd.none )
 
@@ -1242,7 +1324,8 @@ update_UI_Dialog_Person_UpdateName nameStr model =
             dialog_.person_EditedPerson
     in
         model
-            |> update_UI_Dialog { dialog_ | person_EditedPerson = { editedPerson_ | name = nameStr } }
+            |> update_UI_Dialog
+                { dialog_ | person_EditedPerson = { editedPerson_ | name = nameStr } }
 
 
 update_UI_Dialog_Person_SelectRole : RoleID -> Model -> Model
@@ -1262,14 +1345,18 @@ update_UI_Dialog_Person_SelectRole newRoleID model =
 -- UPDATE:UI:DIALOG:PROJECTS
 
 
-update_UI_Dialog_AddProject_UpdateName : String -> Model -> Model
-update_UI_Dialog_AddProject_UpdateName nameStr model =
+update_UI_Dialog_Project_UpdateName : String -> Model -> Model
+update_UI_Dialog_Project_UpdateName nameStr model =
     let
         dialog_ =
             model.ui.dialog
+
+        editedProject_ =
+            dialog_.project_EditedProject
     in
         model
-            |> update_UI_Dialog { dialog_ | addProject_ProjectNameField_Value = nameStr }
+            |> update_UI_Dialog
+                { dialog_ | project_EditedProject = { editedProject_ | name = ProjectName nameStr } }
 
 
 
@@ -1813,47 +1900,33 @@ assignmentsBox keyPrefix model buttonAction assignments tooltipTextPrefix =
 
 projectsTab : Model -> Html Msg
 projectsTab model =
-    div []
-        [ Button.render Mdl
-            [ 1 ]
-            model.mdl
-            [ Button.raised
-            , Options.onClick AddProject
-            , Dialog.openOn "click"
-            ]
-            [ text "Add project" ]
-        , div [ cs "projects" ]
-            [ model.state.projects
-                |> List.indexedMap (projectCard model)
-                |> Grid.grid []
-            ]
-        ]
+    let
+        addProjectButton =
+            Button.render Mdl
+                [ 1 ]
+                model.mdl
+                [ Button.raised
+                , Options.onClick AddProject
+                , Dialog.openOn "click"
+                ]
+                [ text "Add project" ]
 
-
-projectCard : Model -> Int -> Project -> Grid.Cell Msg
-projectCard model index project =
-    Grid.cell
-        [ css "height" "200px", Grid.size Grid.All 4 ]
-        [ Card.view
-            [ Color.background (Color.color Color.DeepPurple Color.S300)
+        projectRow index project =
+            List.li []
+                [ List.content
+                    [ Options.attribute <| Html.Events.onClick (EditProject project)
+                    , Dialog.openOn "click"
+                    ]
+                    [ text <| projectNameToString project.name ]
+                ]
+    in
+        div []
+            [ addProjectButton
+            , List.ul [ cs "projects" ]
+                (model.state.projects
+                    |> List.indexedMap projectRow
+                )
             ]
-            [ Card.media
-                [ css "height" "225px"
-                ]
-                []
-            , Card.title []
-                [ Card.head [ Color.text Color.white ] [ text <| projectNameToString project.name ]
-                , Card.subhead [ Color.text Color.white ] [ text "(No project details for now)" ]
-                ]
-            , Card.menu []
-                [ Button.render Mdl
-                    [ 1, index ]
-                    model.mdl
-                    [ Button.icon, Button.ripple, Color.text Color.white ]
-                    [ Icon.i "delete" ]
-                ]
-            ]
-        ]
 
 
 
@@ -1953,8 +2026,8 @@ dialog model =
                         view_Dialog_Error "Can't remove plan with assignments" model
 
             -- PROJECTS
-            UI_Dialog_AddProject ->
-                view_Dialog_AddProject model
+            UI_Dialog_Project project ->
+                view_Dialog_Project project model
 
             -- STATUS_RECORDS
             UI_Dialog_AddStatusRecord planID ->
@@ -2086,39 +2159,88 @@ view_Dialog_Person maybePerson model =
 -- VIEW:DIALOG:PROJECT
 
 
-view_Dialog_AddProject : Model -> Html Msg
-view_Dialog_AddProject model =
-    Dialog.view
-        []
-        [ Dialog.title [] [ text "Add project" ]
-        , Dialog.content []
-            [ Textfield.render Mdl
-                [ 6 ]
+view_Dialog_Project : Maybe Project -> Model -> Html Msg
+view_Dialog_Project maybeProject model =
+    {--
+      Largely a duplication of view_Dialog_Person
+      Difference in that ProjectName is a union unique type.
+      TODO: generalize
+      --}
+    let
+        editedProject =
+            model.ui.dialog.project_EditedProject
+
+        nameErrorIfApplicable =
+            let
+                value =
+                    projectNameToString editedProject.name
+            in
+                if String.length value == 0 then
+                    Textfield.error "The name can't be empty"
+                else
+                    Options.nop
+
+        dialogHasError =
+            not (nameErrorIfApplicable == Options.nop)
+
+        nameField : Html Msg
+        nameField =
+            Textfield.render Mdl
+                [ 321 ]
                 model.mdl
-                [ Options.onInput UI_Dialog_AddProject_UpdateName
+                [ Options.onInput UI_Dialog_Project_UpdateName
                 , Textfield.label "Name"
                 , Textfield.floatingLabel
                 , Textfield.text_
+                , Textfield.value (projectNameToString editedProject.name)
+                , nameErrorIfApplicable
                 ]
                 []
-            ]
-        , Dialog.actions []
+
+        ( dialogTitle, dialogPrimaryAction, dialogMsg, additionalActions ) =
+            case maybeProject of
+                Nothing ->
+                    ( "Add project", "Create", CreateProjectFromDialog, [] )
+
+                Just project ->
+                    ( "Edit project"
+                    , "Update"
+                    , UpdateProjectFromDialog project
+                    , [ Button.render Mdl
+                            [ 327 ]
+                            model.mdl
+                            [ Dialog.closeOn "click"
+                            , Options.onClick (DeleteProjectFromDialog project)
+                            ]
+                            [ Icon.i "delete" ]
+                      ]
+                    )
+
+        dialogActions =
             [ Button.render Mdl
-                [ 7 ]
+                [ 328 ]
                 model.mdl
                 [ Dialog.closeOn "click"
-                , Options.onClick CreateProjectFromDialog
+                , Options.onClick dialogMsg
+                , Button.disabled |> Options.when dialogHasError
                 ]
-                [ text "Create" ]
+                [ text dialogPrimaryAction ]
             , Button.render Mdl
-                [ 8 ]
+                [ 329 ]
                 model.mdl
                 [ Dialog.closeOn "click"
                 , Options.onClick UI_Dialog_Reset
                 ]
                 [ text "Cancel" ]
             ]
-        ]
+                ++ additionalActions
+    in
+        Dialog.view
+            []
+            [ Dialog.title [] [ text dialogTitle ]
+            , Dialog.content [] [ nameField ]
+            , Dialog.actions [] dialogActions
+            ]
 
 
 
@@ -2530,6 +2652,14 @@ assignmentDecoder =
         (Json.Decode.field "personName" Json.Decode.string)
 
 
+goalDecoder : Json.Decode.Decoder Goal
+goalDecoder =
+    Json.Decode.map3 Goal
+        (Json.Decode.field "label" Json.Decode.string)
+        (Json.Decode.field "description" Json.Decode.string)
+        (Json.Decode.field "goalStatusID" (Json.Decode.map GoalStatusID Json.Decode.string))
+
+
 statusRecordDecoder : Json.Decode.Decoder StatusRecord
 statusRecordDecoder =
     Json.Decode.map3 StatusRecord
@@ -2547,8 +2677,9 @@ planIDDecoder =
 
 projectDecoder : Json.Decode.Decoder Project
 projectDecoder =
-    Json.Decode.map Project
+    Json.Decode.map2 Project
         (Json.Decode.field "name" (Json.Decode.map ProjectName Json.Decode.string))
+        (Json.Decode.field "goals" (Json.Decode.list goalDecoder))
 
 
 getLatestStateUrl : String
