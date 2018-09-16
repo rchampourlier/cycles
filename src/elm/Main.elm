@@ -50,6 +50,7 @@ type alias Model =
     , mdl : Material.Model
     , ui : UI_Model
     , lastError : Maybe String
+    , pendingEventAck : Bool
     }
 
 
@@ -311,6 +312,7 @@ initModel =
     , mdl = Material.model
     , ui = init_UI_Model Nothing
     , lastError = Nothing
+    , pendingEventAck = False
     }
 
 
@@ -381,10 +383,35 @@ maybeDateAsString maybeDate =
 -- UPDATE
 
 
-type
-    Msg
-    -- ASSIGNMENTS
-    = EditAssignments PlanID RoleID
+type Event
+    = CreatedProject Project
+    | UpdatedProject Project
+
+
+type Msg
+    = UI_SelectTab Int
+      -- UI:DIALOG
+    | UI_Dialog_Reset
+      -- UI:DIALOG:PERSONS
+    | UI_Dialog_Person_UpdateName String
+    | UI_Dialog_Person_SelectRole RoleID
+      -- UI:DIALOG:PROJECTS
+    | UI_Dialog_Project_UpdateName String
+      -- UI:DIALOG:PLANS
+    | UI_Dialog_AddPlans_ToggleProjectByNameAllProjects
+    | UI_Dialog_AddPlans_ToggleProjectByName String
+      -- UI:DIALOG:ASSIGNMENTS
+    | UI_Dialog_EditAssignments_ToggleAllPersons
+    | UI_Dialog_EditAssignments_TogglePersonByName String -- personName
+      -- UI:DIALOG:STATUS_RECORDS
+    | UI_Dialog_AddStatusRecord_PrepareAndOpen PlanID Date
+    | UI_Dialog_AddStatusRecord_SelectStatus StatusID
+    | UI_Dialog_AddStatusRecord_UpdateDate PlanID String
+    | UI_Dialog_AddStatusRecord_UpdateDescription PlanID String
+      -- MDL
+    | Mdl (Material.Msg Msg)
+      -- ASSIGNMENTS
+    | EditAssignments PlanID RoleID
     | UpdateAssignmentsFromDialog PlanID RoleID
       -- CYCLES
     | CreateCycle
@@ -412,28 +439,7 @@ type
     | SetDate Date
     | FetchLatestStateDone (Result Http.Error State)
     | StoreStateDone (Result Http.Error ())
-      -- UI
-    | UI_SelectTab Int
-      -- UI:DIALOG
-    | UI_Dialog_Reset
-      -- UI:DIALOG:PERSONS
-    | UI_Dialog_Person_UpdateName String
-    | UI_Dialog_Person_SelectRole RoleID
-      -- UI:DIALOG:PROJECTS
-    | UI_Dialog_Project_UpdateName String
-      -- UI:DIALOG:PLANS
-    | UI_Dialog_AddPlans_ToggleProjectByNameAllProjects
-    | UI_Dialog_AddPlans_ToggleProjectByName String
-      -- UI:DIALOG:ASSIGNMENTS
-    | UI_Dialog_EditAssignments_ToggleAllPersons
-    | UI_Dialog_EditAssignments_TogglePersonByName String -- personName
-      -- UI:DIALOG:STATUS_RECORDS
-    | UI_Dialog_AddStatusRecord_PrepareAndOpen PlanID Date
-    | UI_Dialog_AddStatusRecord_SelectStatus StatusID
-    | UI_Dialog_AddStatusRecord_UpdateDate PlanID String
-    | UI_Dialog_AddStatusRecord_UpdateDescription PlanID String
-      -- MDL
-    | Mdl (Material.Msg Msg)
+    | PushEventDone (Result Http.Error State)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -485,10 +491,9 @@ update msg model =
 
             CreateProjectFromDialog ->
                 model
-                    |> addProject model.ui.dialog.project_EditedProject
-                    |> update_UI_Dialog_Reset
-                    |> updateModel
+                    |> pushEvent (CreatedProject model.ui.dialog.project_EditedProject)
 
+            -- TODO: should display a loader until the ack is received
             EditProject project ->
                 update_UI_Dialog_prepare
                     (UI_Dialog_Project (Just project))
@@ -572,6 +577,24 @@ update msg model =
                     Result.Err error ->
                         ( { model | lastError = Just (httpErrorToString error) }, Cmd.none )
 
+            PushEventDone result ->
+                case result of
+                    Result.Ok newState ->
+                        ( { model
+                            | pendingEventAck = False
+                            , state = newState
+                          }
+                        , Cmd.none
+                        )
+
+                    Result.Err error ->
+                        ( { model
+                            | lastError = Just (httpErrorToString error)
+                            , pendingEventAck = False
+                          }
+                        , Cmd.none
+                        )
+
             -- UI
             UI_SelectTab k ->
                 ( { model | ui = { ui_ | selectedTab = k } }, Cmd.none )
@@ -633,6 +656,47 @@ updateModel model =
 updateState : State -> Model -> Model
 updateState newState model =
     { model | state = newState }
+
+
+
+-- UPDATE:EVENT_SOURCING
+
+
+pushEvent : Event -> Model -> ( Model, Cmd Msg )
+pushEvent evt model =
+    let
+        payloadJson =
+            Json.Encode.object
+                [ ( "event", evt |> eventEncoder ) ]
+
+        body =
+            Http.stringBody "application/json" (Json.Encode.encode 0 payloadJson)
+    in
+        ( model
+        , Http.toTask (createRequestPushEvent pushEventUrl body)
+            |> Task.attempt PushEventDone
+        )
+
+
+pushEventUrl : String
+pushEventUrl =
+    "http://localhost:8081/events/push"
+
+
+eventEncoder : Event -> Json.Encode.Value
+eventEncoder event =
+    case event of
+        CreatedProject project ->
+            Json.Encode.object
+                [ ( "type", Json.Encode.string "created_project" )
+                , ( "project", projectEncoder project )
+                ]
+
+        UpdatedProject project ->
+            Json.Encode.object
+                [ ( "type", Json.Encode.string "updated_project" )
+                , ( "project", projectEncoder project )
+                ]
 
 
 
@@ -2688,7 +2752,7 @@ getLatestStateUrl =
 
 
 
--- COMMANDS:STORE_STATE
+-- COMMANDS:PUSH_EVENT
 
 
 storeState : State -> Cmd Msg
@@ -2786,10 +2850,21 @@ statusRecordEncoder statusRecord =
         ]
 
 
-projectEncoder : Project -> Json.Encode.Value
-projectEncoder { name } =
+goalEncoder : Goal -> Json.Encode.Value
+goalEncoder { label, description, goalStatusID } =
     Json.Encode.object
-        [ ( "name", Json.Encode.string (projectNameToString name) ) ]
+        [ ( "label", Json.Encode.string label )
+        , ( "description", Json.Encode.string description )
+        , ( "goalStatusID", Json.Encode.string (goalStatusIDToString goalStatusID) )
+        ]
+
+
+projectEncoder : Project -> Json.Encode.Value
+projectEncoder { name, goals } =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string (projectNameToString name) )
+        , ( "goals", Json.Encode.list <| List.map goalEncoder goals )
+        ]
 
 
 createRequest : String -> Http.Body -> Http.Request ()
@@ -2800,6 +2875,19 @@ createRequest url body =
         , url = url
         , body = body
         , expect = Http.expectStringResponse (\_ -> Ok ())
+        , timeout = Nothing
+        , withCredentials = False
+        }
+
+
+createRequestPushEvent : String -> Http.Body -> Http.Request State
+createRequestPushEvent url body =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Content-Type" "application/json" ]
+        , url = url
+        , body = body
+        , expect = Http.expectJson (Json.Decode.field "state" stateDecoder)
         , timeout = Nothing
         , withCredentials = False
         }
